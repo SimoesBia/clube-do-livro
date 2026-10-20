@@ -1,0 +1,7 @@
+{
+  "name": "clube-do-livro",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}
