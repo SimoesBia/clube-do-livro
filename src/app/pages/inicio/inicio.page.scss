@@ -1,0 +1,77 @@
+.boas-vindas {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 18px 4px;
+}
+
+h1 {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+h2 {
+  font-size: 1.55rem;
+  margin-bottom: 4px;
+}
+
+.festa {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 14px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: linear-gradient(120deg, #fff1cf, #fde3e7);
+  box-shadow: 0 6px 22px var(--cob-sombra);
+}
+
+.festa p {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.confete {
+  font-size: 1.9rem;
+  display: inline-block;
+  animation: balancar 1.6s ease-in-out 2;
+}
+
+@keyframes balancar {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-14deg); }
+  75% { transform: rotate(14deg); }
+}
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f7dde2;
+}
+
+.linha:last-child {
+  border-bottom: none;
+}
+
+.linha.hoje .dados span {
+  color: var(--cob-framboesa);
+  font-weight: 800;
+}
+
+.dados {
+  display: flex;
+  flex-direction: column;
+}
+
+.dados span {
+  color: #8c5a68;
+  font-size: 0.9rem;
+}
+
+.centro {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+}

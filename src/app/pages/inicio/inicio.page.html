@@ -1,0 +1,60 @@
+<app-topo titulo="Court of Books" enfeite="📚"></app-topo>
+
+<ion-content [fullscreen]="true">
+  <section class="boas-vindas">
+    <app-avatar-membro [membro]="auth.perfil()" [tamanho]="84"></app-avatar-membro>
+    <div>
+      @if (primeiroNome()) {
+        <h1 class="titulo-serif">Oi, {{ primeiroNome() }}!</h1>
+      } @else {
+        <h1 class="titulo-serif">Oi!</h1>
+      }
+      <p class="manuscrita">Lendo, julgando, amando.</p>
+    </div>
+  </section>
+
+  @if (auth.perfil() && !auth.perfil()?.avatar_id) {
+    <section class="secao">
+      <h2 class="titulo-serif">Escolha seu avatar</h2>
+      <p class="suave">Ainda falta escolher quem você vai ser no clube.</p>
+      <ion-button (click)="irParaPerfil()">Escolher agora</ion-button>
+    </section>
+  }
+
+  @if (deHoje().length > 0) {
+    <section class="festa">
+      <span class="confete" aria-hidden="true">🎉</span>
+      <p>
+        Hoje tem festa! Aniversário de
+        @for (m of deHoje(); track m.id; let ultimo = $last) {
+          <strong>{{ m.nome }}</strong>{{ ultimo ? '.' : ', ' }}
+        }
+        Passa lá e deseja parabéns.
+      </p>
+    </section>
+  }
+
+  <app-livro-do-mes></app-livro-do-mes>
+
+  <app-roleta></app-roleta>
+
+  <section class="secao">
+    <h2 class="titulo-serif">Aniversariantes de {{ nomeDoMes }}</h2>
+
+    @if (carregando()) {
+      <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
+    } @else {
+      @for (m of aniversariantes(); track m.id) {
+        <div class="linha" [class.hoje]="ehHoje(m)">
+          <app-avatar-membro [membro]="m" [tamanho]="44"></app-avatar-membro>
+          <div class="dados">
+            <strong>{{ m.nome }}</strong>
+            <span>{{ rotulo(m) }}</span>
+          </div>
+        </div>
+      } @empty {
+        <p class="suave">Ninguém faz aniversário neste mês. Respira, ninguém precisa comprar presente.</p>
+      }
+    }
+  </section>
+</ion-content>
