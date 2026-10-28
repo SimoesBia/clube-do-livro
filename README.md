@@ -87,4 +87,4 @@ _(adicionarei assim que começar a fase de testes)
 
 ## Autoria
 
-Desenvolvido por _(Bruna Simomes)_.
+Desenvolvido por _(Bruna Simoes)_.
