@@ -83,8 +83,8 @@ supabase/    scripts SQL do banco
 
 ## Capturas de tela
 
-_(adicione aqui prints do app: login, início com a roleta, calendário, resenhas e desafios)_
+_(adicionarei assim que começar a fase de testes)
 
 ## Autoria
 
-Desenvolvido por _(seu nome e links aqui)_.
+Desenvolvido por _(Bruna Simomes)_.
