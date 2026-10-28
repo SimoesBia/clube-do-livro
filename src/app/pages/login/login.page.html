@@ -1,0 +1,135 @@
+<ion-content [fullscreen]="true">
+  <div class="palco">
+    <img
+      class="logo"
+      src="assets/logo-court-of-books.png"
+      alt="Court of Books: um clube do livro nada diplomático"
+    />
+
+    <div class="painel">
+      <ion-segment [value]="modo()" (ionChange)="trocarModo($event)">
+        <ion-segment-button value="entrar">
+          <ion-label>Entrar</ion-label>
+        </ion-segment-button>
+        <ion-segment-button value="criar">
+          <ion-label>Criar conta</ion-label>
+        </ion-segment-button>
+      </ion-segment>
+
+      @if (modo() === 'entrar') {
+        <div class="campos">
+          <ion-input
+            label="E-mail"
+            labelPlacement="stacked"
+            fill="outline"
+            type="email"
+            autocomplete="email"
+            [value]="email()"
+            (ionInput)="digitar(email, $event)"
+          ></ion-input>
+
+          <ion-input
+            label="Senha"
+            labelPlacement="stacked"
+            fill="outline"
+            type="password"
+            autocomplete="current-password"
+            [value]="senha()"
+            (ionInput)="digitar(senha, $event)"
+            (keyup.enter)="entrar()"
+          >
+            <ion-input-password-toggle slot="end"></ion-input-password-toggle>
+          </ion-input>
+        </div>
+
+        @if (erro()) {
+          <p class="erro" role="alert">{{ erro() }}</p>
+        }
+
+        <ion-button expand="block" size="large" [disabled]="carregando()" (click)="entrar()">
+          @if (carregando()) {
+            <ion-spinner name="dots"></ion-spinner>
+          } @else {
+            Entrar no clube
+          }
+        </ion-button>
+      } @else {
+        @if (passo() === 1) {
+          <h2 class="titulo-serif">Primeiro, os dados</h2>
+
+          <div class="campos">
+            <ion-input
+              label="Seu nome"
+              labelPlacement="stacked"
+              fill="outline"
+              autocomplete="name"
+              [value]="nome()"
+              (ionInput)="digitar(nome, $event)"
+            ></ion-input>
+
+            <ion-input
+              label="Data de aniversário"
+              labelPlacement="stacked"
+              fill="outline"
+              type="date"
+              [max]="hoje"
+              [value]="aniversario()"
+              (ionInput)="digitar(aniversario, $event)"
+            ></ion-input>
+
+            <ion-input
+              label="E-mail"
+              labelPlacement="stacked"
+              fill="outline"
+              type="email"
+              autocomplete="email"
+              [value]="email()"
+              (ionInput)="digitar(email, $event)"
+            ></ion-input>
+
+            <ion-input
+              label="Crie uma senha (mínimo 6 caracteres)"
+              labelPlacement="stacked"
+              fill="outline"
+              type="password"
+              autocomplete="new-password"
+              [value]="senha()"
+              (ionInput)="digitar(senha, $event)"
+            >
+              <ion-input-password-toggle slot="end"></ion-input-password-toggle>
+            </ion-input>
+          </div>
+
+          @if (erro()) {
+            <p class="erro" role="alert">{{ erro() }}</p>
+          }
+
+          <ion-button expand="block" size="large" (click)="continuar()">Continuar</ion-button>
+        } @else {
+          <h2 class="titulo-serif">Agora, escolha quem você vai ser</h2>
+          <p class="suave">Ela vai aparecer do seu lado em resenhas, desafios e notificações. Dá para trocar depois.</p>
+
+          <app-avatar-seletor [(escolhido)]="avatarId"></app-avatar-seletor>
+
+          @if (erro()) {
+            <p class="erro" role="alert">{{ erro() }}</p>
+          }
+          @if (aviso()) {
+            <p class="aviso" role="status">{{ aviso() }}</p>
+          }
+
+          <div class="botoes">
+            <ion-button fill="outline" size="large" [disabled]="carregando()" (click)="voltar()">Voltar</ion-button>
+            <ion-button size="large" class="grande" [disabled]="carregando()" (click)="criarConta()">
+              @if (carregando()) {
+                <ion-spinner name="dots"></ion-spinner>
+              } @else {
+                Entrar no clube
+              }
+            </ion-button>
+          </div>
+        }
+      }
+    </div>
+  </div>
+</ion-content>

@@ -1,0 +1,50 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/app/inicio" text="Voltar"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Meu perfil</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="conteudo">
+    <section class="secao">
+      <app-avatar-seletor [(escolhido)]="avatarId"></app-avatar-seletor>
+    </section>
+
+    <section class="secao campos">
+      <ion-input
+        label="Seu nome"
+        labelPlacement="stacked"
+        fill="outline"
+        [value]="nome()"
+        (ionInput)="digitar(nome, $event)"
+      ></ion-input>
+
+      <ion-input
+        label="Data de aniversário"
+        labelPlacement="stacked"
+        fill="outline"
+        type="date"
+        [max]="hoje"
+        [value]="aniversario()"
+        (ionInput)="digitar(aniversario, $event)"
+      ></ion-input>
+    </section>
+
+    @if (erro()) {
+      <p class="erro" role="alert">{{ erro() }}</p>
+    }
+
+    <ion-button expand="block" size="large" [disabled]="salvando()" (click)="salvar()">
+      @if (salvando()) {
+        <ion-spinner name="dots"></ion-spinner>
+      } @else {
+        Salvar mudanças
+      }
+    </ion-button>
+
+    <ion-button expand="block" fill="clear" color="medium" (click)="sair()">Sair da conta</ion-button>
+  </div>
+</ion-content>

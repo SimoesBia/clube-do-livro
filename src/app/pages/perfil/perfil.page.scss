@@ -1,0 +1,15 @@
+.conteudo {
+  padding: 4px 0 32px;
+}
+
+.conteudo > ion-button,
+.conteudo > .erro {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+
+.campos {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
