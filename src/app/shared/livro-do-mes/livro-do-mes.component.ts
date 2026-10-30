@@ -27,6 +27,9 @@ import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
             @if (l.autor) {
               <p class="autor">{{ l.autor }}</p>
             }
+            @if (l.ano || l.paginas) {
+              <p class="meta">{{ l.ano ?? '' }}{{ l.ano && l.paginas ? ' · ' : '' }}{{ l.paginas ? l.paginas + ' páginas' : '' }}</p>
+            }
             <p class="suave">Depois de ler, conta o que achou na aba <strong>Resenhas</strong>.</p>
           </div>
         </div>
@@ -91,6 +94,12 @@ import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
         margin: 4px 0 0;
         font-weight: 700;
         color: #8c5a68;
+      }
+      .meta {
+        margin: 2px 0 0;
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--cob-framboesa);
       }
       .admin {
         display: flex;

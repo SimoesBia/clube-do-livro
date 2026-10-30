@@ -19,7 +19,7 @@ import { AvatarMembroComponent } from '../avatar/avatar-membro.component';
         </ion-title>
         <ion-buttons slot="end">
           <ion-button class="botao-avatar" (click)="abrirPerfil()" aria-label="Abrir meu perfil">
-            <app-avatar-membro [membro]="auth.perfil()" [tamanho]="32"></app-avatar-membro>
+            <app-avatar-membro [membro]="auth.perfil()" [tamanho]="32" [clicavel]="false"></app-avatar-membro>
           </ion-button>
         </ion-buttons>
       </ion-toolbar>

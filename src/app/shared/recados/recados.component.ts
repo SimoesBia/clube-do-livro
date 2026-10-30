@@ -167,7 +167,7 @@ export class RecadosComponent implements OnInit {
     this.carregando.set(true);
     const { data } = await this.sb
       .from('recados_encontro')
-      .select('perfil_id, mes, texto, atualizado_em, quem:perfis(nome, avatar_id, participacoes, vitorias)')
+      .select('perfil_id, mes, texto, atualizado_em, quem:perfis(id, nome, avatar_id, participacoes, vitorias)')
       .eq('mes', this.primeiroDia())
       .order('atualizado_em', { ascending: false });
     const lista = (data ?? []) as unknown as Recado[];

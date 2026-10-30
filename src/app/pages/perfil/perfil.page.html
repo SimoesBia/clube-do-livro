@@ -3,7 +3,7 @@
     <ion-buttons slot="start">
       <ion-back-button defaultHref="/app/inicio" text="Voltar"></ion-back-button>
     </ion-buttons>
-    <ion-title>Meu perfil</ion-title>
+    <ion-title>Meu perfil <span class="enfeite" aria-hidden="true">📚</span></ion-title>
   </ion-toolbar>
 </ion-header>
 
@@ -32,6 +32,8 @@
         (ionInput)="digitar(aniversario, $event)"
       ></ion-input>
     </section>
+
+    <app-livros-lidos></app-livros-lidos>
 
     @if (erro()) {
       <p class="erro" role="alert">{{ erro() }}</p>

@@ -32,7 +32,7 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
   selector: 'app-desafios',
   imports: [IonContent, IonButton, IonSpinner, TopoComponent, AvatarComponent, AvatarMembroComponent],
   template: `
-    <app-topo titulo="Desafios"></app-topo>
+    <app-topo titulo="Desafios" enfeite="📚"></app-topo>
     <ion-content [fullscreen]="true">
       <section class="secao explicacao">
         <h1 class="titulo-serif">Desafios de leitura 🏆</h1>

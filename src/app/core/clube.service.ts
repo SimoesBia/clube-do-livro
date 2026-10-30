@@ -3,7 +3,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { DadosDoClube, ResultadoBusca, Sorteio, Sugestao } from './modelos';
 import { SupabaseService } from './supabase.service';
 
-const AUTOR_COM_NIVEL = 'quem:perfis(nome, avatar_id, participacoes, vitorias)';
+const AUTOR_COM_NIVEL = 'quem:perfis(id, nome, avatar_id, participacoes, vitorias)';
 
 // Tudo sobre o clube em si: livro do mês, sugestões, roleta e sorteios.
 @Injectable({ providedIn: 'root' })
@@ -25,14 +25,15 @@ export class ClubeService {
   async carregarClube() {
     const { data } = await this.sb
       .from('clube')
-      .select('data_sorteio, link_meet, livro:livros(id, titulo, autor, capa_url, criado_em)')
+      .select('data_sorteio, link_meet, livro:livros(id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em)')
       .eq('id', 1)
       .maybeSingle();
     if (data) {
       this.dados.set({
         data_sorteio: data.data_sorteio ?? null,
         link_meet: data.link_meet ?? null,
-        livro: (data.livro as unknown as DadosDoClube['livro']) ?? null,      });
+        livro: (data.livro as unknown as DadosDoClube['livro']) ?? null,
+      });
     }
   }
 
@@ -61,7 +62,7 @@ export class ClubeService {
   async definirLivroDoMes(livro: ResultadoBusca): Promise<string> {
     const { data, error } = await this.sb
       .from('livros')
-      .insert({ titulo: livro.titulo, autor: livro.autor, capa_url: livro.capa_url })
+      .insert(this.camposDoLivro(livro))
       .select('id')
       .single();
     if (error || !data) return 'Não deu para salvar o livro agora.';
@@ -94,7 +95,7 @@ export class ClubeService {
   async sugerir(livro: ResultadoBusca): Promise<string> {
     const { error } = await this.sb
       .from('sugestoes')
-      .insert({ titulo: livro.titulo, autor: livro.autor, capa_url: livro.capa_url });
+      .insert(this.camposDoLivro(livro));
     if (error) {
       return error.code === '42501'
         ? 'Você já tem um livro na roleta. Tire o seu para colocar outro.'
@@ -107,6 +108,19 @@ export class ClubeService {
   async removerSugestao(id: string) {
     await this.sb.from('sugestoes').delete().eq('id', id);
     await this.carregarSugestoes();
+  }
+
+  // Os campos de um livro que vão para o banco (só o que existe, já limpo)
+  private camposDoLivro(l: ResultadoBusca) {
+    return {
+      titulo: l.titulo.slice(0, 200),
+      autor: l.autor ? l.autor.slice(0, 200) : null,
+      capa_url: l.capa_url && l.capa_url.startsWith('https://') ? l.capa_url : null,
+      ano: l.ano ?? null,
+      paginas: l.paginas ?? null,
+      descricao: l.descricao ? l.descricao.slice(0, 1000) : null,
+      chave_ol: l.chave_ol ?? null,
+    };
   }
 
   // ----- ao vivo -----

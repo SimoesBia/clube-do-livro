@@ -6,13 +6,13 @@ import { SupabaseService } from '../../core/supabase.service';
 import { AvatarMembroComponent } from '../../shared/avatar/avatar-membro.component';
 import { TopoComponent } from '../../shared/topo/topo.component';
 
-const AUTOR = 'quem:perfis(nome, avatar_id, participacoes, vitorias)';
+const AUTOR = 'quem:perfis(id, nome, avatar_id, participacoes, vitorias)';
 
 @Component({
   selector: 'app-resenhas',
   imports: [IonContent, IonButton, IonSpinner, TopoComponent, AvatarMembroComponent],
   template: `
-    <app-topo titulo="Resenhas"></app-topo>
+    <app-topo titulo="Resenhas" enfeite="📚"></app-topo>
     <ion-content [fullscreen]="true">
       <section class="intro">
         <h1 class="titulo-serif">O que você achou?</h1>
@@ -138,6 +138,9 @@ const AUTOR = 'quem:perfis(nome, avatar_id, participacoes, vitorias)';
           }
 
           <footer>
+            <button type="button" class="pilula curtir" [class.ativa]="euCurti(r.id)" (click)="curtir(r.id)" [attr.aria-pressed]="euCurti(r.id)">
+              {{ euCurti(r.id) ? '♥' : '♡' }} {{ totalDeCurtidas(r.id) }}
+            </button>
             <button type="button" class="pilula" (click)="alternarComentarios(r.id)">
               💬 {{ abertas()[r.id] ? 'Esconder comentários' : 'Comentários' }}
             </button>
@@ -330,6 +333,10 @@ const AUTOR = 'quem:perfis(nome, avatar_id, participacoes, vitorias)';
         flex-wrap: wrap;
         gap: 8px;
       }
+      .pilula.curtir.ativa {
+        background: var(--cob-framboesa);
+        border-color: var(--cob-framboesa);
+      }
       .pilula.apagar {
         color: #b3122f;
         border-color: #f4b8c2;
@@ -398,6 +405,9 @@ export class ResenhasPage {
   protected readonly rascunhos = signal<Record<string, string>>({});
   protected readonly spoilerVisto = signal<Record<string, boolean>>({});
 
+  // curtidas
+  protected readonly curtidas = signal<{ resenha_id: string; perfil_id: string }[]>([]);
+
   protected readonly jaTenhoResenha = computed(() =>
     this.resenhas().some((r) => r.livro_id === this.livroId() && r.autor_id === this.auth.perfil()?.id),
   );
@@ -414,6 +424,8 @@ export class ResenhasPage {
         .select(`id, livro_id, autor_id, nota, dias_leitura, texto, spoiler, criado_em, livro:livros(id, titulo, autor, capa_url), ${AUTOR}`)
         .order('criado_em', { ascending: false }),
     ]);
+    const curtidas = await this.sb.from('curtidas_resenha').select('resenha_id, perfil_id');
+    this.curtidas.set((curtidas.data ?? []) as { resenha_id: string; perfil_id: string }[]);
     this.livros.set((livros.data ?? []) as Livro[]);
     this.resenhas.set((resenhas.data ?? []) as unknown as Resenha[]);
     this.carregando.set(false);
@@ -492,6 +504,32 @@ export class ResenhasPage {
 
   protected mostrarSpoiler(id: string) {
     this.spoilerVisto.update((v) => ({ ...v, [id]: true }));
+  }
+
+  // ----- curtidas -----
+
+  protected totalDeCurtidas(id: string): number {
+    return this.curtidas().filter((c) => c.resenha_id === id).length;
+  }
+
+  protected euCurti(id: string): boolean {
+    const meuId = this.auth.perfil()?.id;
+    return !!meuId && this.curtidas().some((c) => c.resenha_id === id && c.perfil_id === meuId);
+  }
+
+  protected async curtir(id: string) {
+    const meuId = this.auth.perfil()?.id;
+    if (!meuId) return;
+    const antes = this.curtidas();
+    if (this.euCurti(id)) {
+      this.curtidas.set(antes.filter((c) => !(c.resenha_id === id && c.perfil_id === meuId)));
+      const { error } = await this.sb.from('curtidas_resenha').delete().eq('resenha_id', id).eq('perfil_id', meuId);
+      if (error) this.curtidas.set(antes);
+    } else {
+      this.curtidas.set([...antes, { resenha_id: id, perfil_id: meuId }]);
+      const { error } = await this.sb.from('curtidas_resenha').insert({ resenha_id: id, perfil_id: meuId });
+      if (error) this.curtidas.set(antes);
+    }
   }
 
   // ----- comentários -----

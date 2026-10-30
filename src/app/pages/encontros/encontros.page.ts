@@ -10,7 +10,7 @@ type Aba = 'calendario' | 'recados';
   selector: 'app-encontros',
   imports: [IonContent, IonSegment, IonSegmentButton, IonLabel, TopoComponent, CalendarioComponent, RecadosComponent],
   template: `
-    <app-topo titulo="Encontros"></app-topo>
+    <app-topo titulo="Encontros" enfeite="📚"></app-topo>
     <ion-content [fullscreen]="true">
       <section class="intro">
         <h1 class="titulo-serif">Vamos marcar o encontro?</h1>

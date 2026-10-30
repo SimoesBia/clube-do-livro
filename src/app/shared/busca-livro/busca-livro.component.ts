@@ -38,6 +38,9 @@ import { ResultadoBusca } from '../../core/modelos';
             @if (e.autor) {
               <span>{{ e.autor }}</span>
             }
+            @if (e.ano || e.paginas) {
+              <span>{{ e.ano ?? '' }}{{ e.ano && e.paginas ? ' · ' : '' }}{{ e.paginas ? e.paginas + ' páginas' : '' }}</span>
+            }
             <span class="ok">✓ Livro escolhido</span>
           </div>
         </div>
@@ -56,7 +59,7 @@ import { ResultadoBusca } from '../../core/modelos';
                 <div class="info">
                   <strong>{{ r.titulo }}</strong>
                   @if (r.autor) {
-                    <span>{{ r.autor }}</span>
+                    <span>{{ r.autor }}{{ r.ano ? ' · ' + r.ano : '' }}</span>
                   }
                 </div>
               </button>
@@ -203,6 +206,24 @@ export class BuscaLivroComponent {
     this.escolhido.set(r);
     this.resultados.set([]);
     this.texto.set(r.titulo);
+    void this.completar(r);
+  }
+
+  // Depois de escolher, busca na Open Library a descrição (e as páginas/ano, se faltarem)
+  private async completar(r: ResultadoBusca) {
+    if (!r.chave_ol) return;
+    try {
+      const extras = await this.api.completar(r.chave_ol);
+      if (this.escolhido()?.chave_ol !== r.chave_ol) return; // a pessoa já escolheu outro
+      this.escolhido.set({
+        ...r,
+        descricao: extras.descricao ?? r.descricao ?? null,
+        paginas: r.paginas ?? extras.paginas,
+        ano: r.ano ?? extras.ano,
+      });
+    } catch {
+      // sem os extras, o livro continua valendo
+    }
   }
 
   protected usarDigitado() {

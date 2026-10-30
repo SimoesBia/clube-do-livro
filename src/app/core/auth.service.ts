@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Session } from '@supabase/supabase-js';
+import { EfeitosService } from './efeitos.service';
 import { SupabaseService } from './supabase.service';
 import { Perfil } from './modelos';
 
@@ -36,6 +37,7 @@ export class AuthService {
   readonly pronto: Promise<void> = new Promise<void>((resolver) => (this.resolverPronto = resolver));
 
   constructor() {
+    inject(EfeitosService).iniciar(); // brilhinhos ao tocar nos botões
     this.iniciar();
   }
 

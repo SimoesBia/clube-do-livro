@@ -12,20 +12,37 @@ Aplicativo para o meu clube do livro, que antes funcionava só num grupo de What
 ## Funcionalidades
 
 **Já funcionando**
-- Cadastro e login (nome, e-mail, data de aniversário e escolha de uma entre 36 bonecas prontas)
+- Cadastro e login (nome, e-mail, data de aniversário e escolha de uma entre 36 bonecas ilustradas)
+- Aro ao redor da boneca que evolui com os desafios (vinho, bronze, prata, ouro e diamante) e cartãozinho de resumo ao tocar no avatar de qualquer pessoa
 - Aniversariantes do mês e destaque para quem faz aniversário no dia
-- Livro do mês com capa buscada automaticamente (Google Livros, com Open Library como reserva)
+- Livro do mês com capa, ano, páginas e descrição, tudo buscado na **Open Library**
 - Sugestões de livros e **roleta** em SVG com as cores do clube; o sorteio é feito no servidor e aparece girando **ao vivo** para todo mundo
+- **Biblioteca**: estante dos livros lidos pelo clube e uma aba "Descobrir" com livros em alta, por assunto e um botão "surpreenda-me" (Open Library)
+- Livros lidos de cada pessoa (antes, durante e fora do clube), com contador no perfil
 - Calendário de dias livres com "mapa de calor" dos melhores dias e recadinhos por mês
-- Resenhas no estilo "ficha de leitura": nota, tempo de leitura, aviso de spoiler e comentários
-- Aba de desafios com níveis (aro do avatar: vinho, bronze, prata, ouro e diamante) e placar de troféus
+- Resenhas no estilo "ficha de leitura": nota, tempo de leitura, aviso de spoiler, curtidas e comentários
+- Aba de desafios com níveis e placar de troféus
+- Animações: brilhinhos ao tocar nos botões, cartões que surgem ao rolar e detalhes que se mexem
 
 **Próximos passos**
-- Criar desafios, convidar pessoas e chat de cada desafio
-- Biblioteca digital (EPUB e PDF)
+- Desafios completos: criar, convidar, "corrida" de progresso, pódio e troféus
 - Notificações (aniversários, convites e resultado do sorteio)
 - Link do encontro online (Meet)
 - Publicação gratuita como PWA
+
+## Open Library (API pública)
+
+O app usa a [Open Library](https://openlibrary.org/developers/api) como fonte principal de livros, sem chave de acesso:
+
+| Parte da API | Para que o app usa |
+|---|---|
+| Search API | procurar livros ao sugerir, escolher o livro do mês ou adicionar à lista de lidos |
+| Trending API | "Em alta" no mostruário da Biblioteca |
+| Subjects API | livros por assunto e o botão "surpreenda-me" |
+| Works API | descrição completa e dados extras de cada livro |
+| Covers API | capas |
+
+Se a Open Library estiver fora do ar, a busca tenta o Google Livros como plano B.
 
 ## Tecnologias
 
@@ -34,7 +51,8 @@ Aplicativo para o meu clube do livro, que antes funcionava só num grupo de What
 | App | Ionic 9 + Angular (componentes standalone, signals) + TypeScript |
 | Banco de dados e login | Supabase (PostgreSQL, Auth, Realtime) |
 | Segurança | Row Level Security (RLS), permissões por coluna e função de sorteio no servidor |
-| Visual | SCSS, SVG, fontes Fraunces, Quicksand e Caveat |
+| Dados de livros | Open Library API (e Google Livros como reserva) |
+| Visual | SCSS, SVG, animações CSS, fontes Fraunces, Quicksand e Caveat |
 
 ## Segurança (resumo)
 
@@ -68,6 +86,7 @@ ionic serve
 2. `02_avatares.sql` — escolha da boneca
 3. `03_bloco2.sql` — livros, roleta, encontros, resenhas e segurança
 4. `04_uma_sugestao_por_pessoa.sql` — limite de 1 sugestão por pessoa (opcional se o 03 já foi rodado na versão nova)
+5. `05_bloco3.sql` — dados extras dos livros, livros lidos, curtidas e sorteio atualizado
 
 Depois, em *Authentication*, desligue "Confirm email" para testar, crie sua conta no app e torne-a administradora (instruções no final do `03_bloco2.sql`).
 
@@ -75,8 +94,8 @@ Depois, em *Authentication*, desligue "Confirm email" para testar, crie sua cont
 
 ```
 src/app/
-  core/      serviços (login, clube, busca de livros), modelos e "porteiros" de rota
-  shared/    componentes reutilizáveis (avatar, roleta, calendário, busca de livro...)
+  core/      serviços (login, clube, Open Library, livros lidos), modelos e "porteiros" de rota
+  shared/    componentes reutilizáveis (avatar, roleta, calendário, busca e ficha de livro...)
   pages/     telas (login, início, resenhas, desafios, encontros, perfil)
 supabase/    scripts SQL do banco
 ```

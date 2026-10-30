@@ -99,6 +99,10 @@ export interface Livro {
   titulo: string;
   autor: string | null;
   capa_url: string | null;
+  ano?: number | null;
+  paginas?: number | null;
+  descricao?: string | null;
+  chave_ol?: string | null; // código do livro na Open Library (ex.: OL45883W)
   criado_em: string;
 }
 
@@ -109,7 +113,7 @@ export interface DadosDoClube {
 }
 
 // Quem aparece ao lado de uma sugestão, resenha ou recado
-export type Autor = Pick<Perfil, 'nome' | 'avatar_id' | 'participacoes' | 'vitorias'>;
+export type Autor = Pick<Perfil, 'id' | 'nome' | 'avatar_id' | 'participacoes' | 'vitorias'>;
 
 export interface OpcaoSorteio {
   id: string;
@@ -137,6 +141,10 @@ export interface ResultadoBusca {
   titulo: string;
   autor: string | null;
   capa_url: string | null;
+  ano?: number | null;
+  paginas?: number | null;
+  descricao?: string | null;
+  chave_ol?: string | null;
 }
 
 export interface Resenha {
@@ -159,4 +167,27 @@ export interface Comentario {
   texto: string;
   criado_em: string;
   quem: Autor | null;
+}
+
+// ---------- Livros lidos de cada pessoa ----------
+
+export type ContextoLeitura = 'antes_do_clube' | 'no_clube' | 'fora_do_clube';
+
+export const CONTEXTOS: { valor: ContextoLeitura; nome: string }[] = [
+  { valor: 'antes_do_clube', nome: 'Antes do clube' },
+  { valor: 'no_clube', nome: 'No clube' },
+  { valor: 'fora_do_clube', nome: 'Fora do clube' },
+];
+
+export interface LivroLido {
+  id: string;
+  perfil_id: string;
+  titulo: string;
+  autor: string | null;
+  capa_url: string | null;
+  ano: number | null;
+  paginas: number | null;
+  chave_ol: string | null;
+  contexto: ContextoLeitura;
+  criado_em: string;
 }

@@ -14,6 +14,7 @@ import {
 } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
 import { AvatarSeletorComponent } from '../../shared/avatar/avatar-seletor.component';
+import { LivrosLidosComponent } from '../../shared/livros-lidos/livros-lidos.component';
 
 @Component({
   selector: 'app-perfil',
@@ -28,6 +29,7 @@ import { AvatarSeletorComponent } from '../../shared/avatar/avatar-seletor.compo
     IonButton,
     IonSpinner,
     AvatarSeletorComponent,
+    LivrosLidosComponent,
   ],
   templateUrl: './perfil.page.html',
   styleUrl: './perfil.page.scss',
