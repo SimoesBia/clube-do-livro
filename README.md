@@ -100,10 +100,6 @@ src/app/
 supabase/    scripts SQL do banco
 ```
 
-## Capturas de tela
-
-_(adicionarei assim que começar a fase de testes)
-
 ## Autoria
 
 Desenvolvido por _(Bruna Simoes)_.
