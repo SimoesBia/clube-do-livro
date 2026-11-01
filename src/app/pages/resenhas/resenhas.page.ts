@@ -6,7 +6,8 @@ import { SupabaseService } from '../../core/supabase.service';
 import { AvatarMembroComponent } from '../../shared/avatar/avatar-membro.component';
 import { TopoComponent } from '../../shared/topo/topo.component';
 
-const AUTOR = 'quem:perfis(id, nome, avatar_id, participacoes, vitorias)';
+// "!autor_id" diz ao Supabase qual ligação usar (a tabela de comentários e a de curtidas também ligam resenhas a perfis)
+const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias)';
 
 @Component({
   selector: 'app-resenhas',
@@ -94,6 +95,9 @@ const AUTOR = 'quem:perfis(id, nome, avatar_id, participacoes, vitorias)';
 
       @if (carregando()) {
         <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
+      }
+      @if (erroDaLista()) {
+        <p class="erro lista-erro" role="alert">{{ erroDaLista() }}</p>
       }
 
       @for (r of resenhas(); track r.id) {
@@ -377,6 +381,9 @@ const AUTOR = 'quem:perfis(id, nome, avatar_id, participacoes, vitorias)';
       .vazio {
         text-align: center;
       }
+      .lista-erro {
+        margin: 12px 14px;
+      }
     `,
   ],
 })
@@ -387,6 +394,7 @@ export class ResenhasPage {
   protected readonly livros = signal<Livro[]>([]);
   protected readonly resenhas = signal<Resenha[]>([]);
   protected readonly carregando = signal(true);
+  protected readonly erroDaLista = signal('');
 
   // ficha de leitura
   protected readonly formAberto = signal(false);
@@ -421,12 +429,13 @@ export class ResenhasPage {
       this.sb.from('livros').select('id, titulo, autor, capa_url, criado_em').order('criado_em', { ascending: false }),
       this.sb
         .from('resenhas')
-        .select(`id, livro_id, autor_id, nota, dias_leitura, texto, spoiler, criado_em, livro:livros(id, titulo, autor, capa_url), ${AUTOR}`)
+        .select(`id, livro_id, autor_id, nota, dias_leitura, texto, spoiler, criado_em, livro:livros!livro_id(id, titulo, autor, capa_url), ${AUTOR}`)
         .order('criado_em', { ascending: false }),
     ]);
     const curtidas = await this.sb.from('curtidas_resenha').select('resenha_id, perfil_id');
     this.curtidas.set((curtidas.data ?? []) as { resenha_id: string; perfil_id: string }[]);
     this.livros.set((livros.data ?? []) as Livro[]);
+    this.erroDaLista.set(resenhas.error ? 'Não consegui carregar as resenhas agora. Tente de novo em instantes.' : '');
     this.resenhas.set((resenhas.data ?? []) as unknown as Resenha[]);
     this.carregando.set(false);
   }

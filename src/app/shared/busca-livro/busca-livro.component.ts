@@ -209,12 +209,11 @@ export class BuscaLivroComponent {
     void this.completar(r);
   }
 
-  // Depois de escolher, busca na Open Library a descrição (e as páginas/ano, se faltarem)
+  // Depois de escolher, busca a descrição em português (e as páginas/ano, se faltarem)
   private async completar(r: ResultadoBusca) {
-    if (!r.chave_ol) return;
     try {
-      const extras = await this.api.completar(r.chave_ol);
-      if (this.escolhido()?.chave_ol !== r.chave_ol) return; // a pessoa já escolheu outro
+      const extras = await this.api.detalhes(r);
+      if (this.escolhido()?.titulo !== r.titulo) return; // a pessoa já escolheu outro
       this.escolhido.set({
         ...r,
         descricao: extras.descricao ?? r.descricao ?? null,

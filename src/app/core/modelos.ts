@@ -191,3 +191,47 @@ export interface LivroLido {
   contexto: ContextoLeitura;
   criado_em: string;
 }
+
+// ---------- Desafios de leitura ----------
+
+export type UnidadeDesafio = 'livros' | 'paginas' | 'minutos';
+export type StatusDoDesafio = 'ativo' | 'encerrado' | 'cancelado';
+export type StatusDoParticipante = 'convidado' | 'aceito' | 'recusado';
+
+export const UNIDADES: { valor: UnidadeDesafio; nome: string; plural: string; passos: number[] }[] = [
+  { valor: 'livros', nome: 'Livros lidos', plural: 'livros', passos: [1] },
+  { valor: 'paginas', nome: 'Páginas lidas', plural: 'páginas', passos: [10, 50, 100] },
+  { valor: 'minutos', nome: 'Minutos de leitura', plural: 'minutos', passos: [15, 30, 60] },
+];
+
+export interface ParticipanteDesafio {
+  perfil_id: string;
+  status: StatusDoParticipante;
+  progresso: number;
+  posicao: number | null;
+  quem: Autor | null;
+}
+
+export interface Desafio {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  unidade: UnidadeDesafio;
+  meta: number;
+  inicio: string;
+  fim: string | null;
+  criado_por: string;
+  status: StatusDoDesafio;
+  criado_em: string;
+  encerrado_em: string | null;
+  participantes: ParticipanteDesafio[];
+}
+
+export interface MensagemDoDesafio {
+  id: string;
+  desafio_id: string;
+  autor_id: string;
+  texto: string;
+  criado_em: string;
+  quem: Autor | null;
+}

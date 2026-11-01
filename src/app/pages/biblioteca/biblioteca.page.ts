@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { IonContent, IonLabel, IonSegment, IonSegmentButton, IonSpinner } from '@ionic/angular';
 import { ClubeService } from '../../core/clube.service';
-import { ASSUNTOS, LivrosApiService } from '../../core/livros-api.service';
+import { CATEGORIAS, CATEGORIA_MUNDO, LivrosApiService } from '../../core/livros-api.service';
 import { Livro, ResultadoBusca } from '../../core/modelos';
 import { SupabaseService } from '../../core/supabase.service';
 import { DetalheLivroComponent } from '../../shared/detalhe-livro/detalhe-livro.component';
@@ -74,10 +74,10 @@ type Aba = 'estante' | 'descobrir';
         }
       } @else {
         <div class="categorias">
-          <button type="button" class="pilula" [class.ativa]="categoria() === 'alta'" (click)="escolherCategoria('alta')">🔥 Em alta</button>
-          @for (a of assuntos; track a.id) {
-            <button type="button" class="pilula" [class.ativa]="categoria() === a.id" (click)="escolherCategoria(a.id)">{{ a.nome }}</button>
+          @for (c of categorias; track c.id) {
+            <button type="button" class="pilula" [class.ativa]="categoria() === c.id" (click)="escolherCategoria(c.id)">{{ c.nome }}</button>
           }
+          <button type="button" class="pilula" [class.ativa]="categoria() === mundo.id" (click)="escolherCategoria(mundo.id)">{{ mundo.nome }}</button>
         </div>
         <div class="surpresa">
           <button type="button" class="pilula ativa" (click)="surpreender()">🎲 Surpreenda-me</button>
@@ -111,7 +111,13 @@ type Aba = 'estante' | 'descobrir';
           }
         </div>
 
-        <p class="credito">Dados e capas: <a href="https://openlibrary.org" target="_blank" rel="noopener noreferrer">Open Library</a></p>
+        @if (categoria() === mundo.id) {
+          <p class="credito">Esta categoria vem direto da Open Library e traz os títulos no idioma original (quase sempre inglês).</p>
+        }
+        <p class="credito">
+          Livros em português: <a href="https://books.google.com" target="_blank" rel="noopener noreferrer">Google Livros</a> ·
+          Complemento: <a href="https://openlibrary.org" target="_blank" rel="noopener noreferrer">Open Library</a>
+        </p>
       }
 
       <app-detalhe-livro [livro]="detalhe()" [modo]="modoDoDetalhe()" (fechar)="detalhe.set(null)"></app-detalhe-livro>
@@ -281,7 +287,8 @@ export class BibliotecaPage {
   protected readonly clube = inject(ClubeService);
 
   protected readonly aba = signal<Aba>('estante');
-  protected readonly assuntos = ASSUNTOS;
+  protected readonly categorias = CATEGORIAS;
+  protected readonly mundo = CATEGORIA_MUNDO;
 
   // estante do clube
   protected readonly livros = signal<Livro[]>([]);
@@ -325,10 +332,11 @@ export class BibliotecaPage {
   }
 
   protected async surpreender() {
-    const assunto = this.assuntos[Math.floor(Math.random() * this.assuntos.length)];
-    const deslocamento = Math.floor(Math.random() * 8) * 18;
-    this.categoria.set(assunto.id);
-    this.rotuloSurpresa.set(`Surpresa de hoje: ${assunto.nome}`);
+    const sorteadas = this.categorias.filter((c) => c.id !== 'novos');
+    const categoria = sorteadas[Math.floor(Math.random() * sorteadas.length)];
+    const deslocamento = Math.floor(Math.random() * 5) * 40;
+    this.categoria.set(categoria.id);
+    this.rotuloSurpresa.set(`Surpresa de hoje: ${categoria.nome}`);
     await this.carregarCategoria(deslocamento);
   }
 
@@ -336,13 +344,12 @@ export class BibliotecaPage {
     this.carregando.set(true);
     this.erro.set('');
     try {
-      const id = this.categoria();
-      const livros = id === 'alta' ? await this.api.emAlta() : await this.api.porAssunto(id, deslocamento);
+      const livros = await this.api.mostruario(this.categoria(), deslocamento);
       this.lista.set(livros);
       if (livros.length === 0) this.erro.set('Não encontrei livros nessa categoria agora.');
     } catch {
       this.lista.set([]);
-      this.erro.set('Não consegui falar com a Open Library agora. Tente de novo em instantes.');
+      this.erro.set('Não consegui buscar os livros agora. Tente de novo em instantes.');
     }
     this.carregando.set(false);
   }

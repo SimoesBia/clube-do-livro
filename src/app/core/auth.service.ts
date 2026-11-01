@@ -70,6 +70,13 @@ export class AuthService {
     this.perfil.set((data as Perfil | null) ?? null);
   }
 
+  async recarregarPerfil() {
+    const id = this.sessao()?.user.id;
+    if (!id) return;
+    const { data } = await this.sb.from('perfis').select('*').eq('id', id).maybeSingle();
+    if (data) this.perfil.set(data as Perfil);
+  }
+
   async criarConta(d: DadosCadastro): Promise<Resultado> {
     const { data, error } = await this.sb.auth.signUp({
       email: d.email.trim(),

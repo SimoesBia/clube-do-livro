@@ -6,7 +6,7 @@ import { LivrosApiService } from '../../core/livros-api.service';
 import { CONTEXTOS, ContextoLeitura, ResultadoBusca } from '../../core/modelos';
 import { LivrosLidosService } from '../../core/livros-lidos.service';
 
-// A "ficha" de um livro: capa, dados, descrição (da Open Library) e ações (sugerir para a roleta, marcar como lido).
+// A "ficha" de um livro: capa, dados, descrição em português e ações (sugerir para a roleta, marcar como lido).
 @Component({
   selector: 'app-detalhe-livro',
   imports: [IonButton, IonSpinner],
@@ -42,7 +42,7 @@ import { LivrosLidosService } from '../../core/livros-lidos.service';
           @if (descricao()) {
             <p class="descricao">{{ descricao() }}</p>
           } @else if (!carregando()) {
-            <p class="suave">Esse livro ainda não tem descrição por aqui.</p>
+            <p class="suave">Não encontrei uma descrição desse livro em português.</p>
           }
 
           @if (l.chave_ol) {
@@ -204,12 +204,12 @@ export class DetalheLivroComponent {
     if (!l) return;
     this.contexto.set(this.modo() === 'clube' ? 'no_clube' : 'fora_do_clube');
     void this.clube.carregarSugestoes();
-    // Se faltar descrição, páginas ou ano, pergunta para a Open Library
-    if (l.chave_ol && (!l.descricao || !l.paginas || !l.ano)) {
+    // Se faltar descrição, páginas ou ano, procura (em português) para completar
+    if (!l.descricao || !l.paginas || !l.ano) {
       this.carregando.set(true);
       try {
-        const extras = await this.api.completar(l.chave_ol);
-        if (this.livro()?.chave_ol === l.chave_ol) this.extras.set(extras);
+        const extras = await this.api.detalhes(l);
+        if (this.livro()?.titulo === l.titulo) this.extras.set(extras);
       } catch {
         // sem os extras, mostramos só o que já temos
       }

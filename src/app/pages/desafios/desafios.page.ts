@@ -1,9 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { IonButton, IonContent, IonSpinner } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
-import { NOMES_DOS_NIVEIS, NivelAvatar, nivelDoPerfil } from '../../core/modelos';
+import { DesafiosService } from '../../core/desafios.service';
+import { Desafio, NOMES_DOS_NIVEIS, NivelAvatar, UNIDADES, nivelDoPerfil } from '../../core/modelos';
 import { AvatarComponent } from '../../shared/avatar/avatar.component';
 import { AvatarMembroComponent } from '../../shared/avatar/avatar-membro.component';
+import { CriarDesafioComponent } from '../../shared/criar-desafio/criar-desafio.component';
+import { DesafioDetalheComponent } from '../../shared/desafio-detalhe/desafio-detalhe.component';
 import { TopoComponent } from '../../shared/topo/topo.component';
 
 interface InfoDoNivel {
@@ -30,7 +33,16 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
 
 @Component({
   selector: 'app-desafios',
-  imports: [IonContent, IonButton, IonSpinner, TopoComponent, AvatarComponent, AvatarMembroComponent],
+  imports: [
+    IonContent,
+    IonButton,
+    IonSpinner,
+    TopoComponent,
+    AvatarComponent,
+    AvatarMembroComponent,
+    CriarDesafioComponent,
+    DesafioDetalheComponent,
+  ],
   template: `
     <app-topo titulo="Desafios" enfeite="📚"></app-topo>
     <ion-content [fullscreen]="true">
@@ -41,9 +53,58 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
           pouco tempo, ler um livro que comece com a letra X, ler um livro de uma certa cor… A criatividade é sua!
         </p>
         <p>
-          <strong>Convide outras pessoas</strong>, acompanhem o progresso de cada uma e vejam quem está na frente. Quem vence ganha
-          um <strong>troféu</strong>, e o aro ao redor do seu avatar vai evoluindo: vinho, bronze, prata, ouro e diamante.
+          <strong>Convide outras pessoas</strong>, acompanhem o progresso de cada uma numa corrida e vejam quem está na frente. Quem
+          vence ganha um <strong>troféu</strong>, e o aro ao redor do seu avatar vai evoluindo: vinho, bronze, prata, ouro e diamante.
         </p>
+        <ion-button expand="block" (click)="criando.set(true)">Criar um desafio 🏆</ion-button>
+      </section>
+
+      @if (desafios.convites().length > 0) {
+        <section class="secao convites">
+          <h2 class="titulo-serif">Convites para você 💌</h2>
+          @for (d of desafios.convites(); track d.id) {
+            <div class="convite">
+              <div class="texto">
+                <strong>{{ d.titulo }}</strong>
+                <span>Meta: {{ d.meta }} {{ plural(d) }}</span>
+              </div>
+              <div class="botoes">
+                <ion-button size="small" (click)="responder(d.id, true)">Aceitar</ion-button>
+                <ion-button size="small" fill="outline" (click)="responder(d.id, false)">Recusar</ion-button>
+                <button type="button" class="pilula" (click)="abrir(d.id)">Ver</button>
+              </div>
+            </div>
+          }
+        </section>
+      }
+
+      <section class="secao">
+        <h2 class="titulo-serif">Meus desafios</h2>
+        @if (!desafios.carregado()) {
+          <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
+        }
+        @for (d of ativos(); track d.id) {
+          <button type="button" class="cartao-desafio" (click)="abrir(d.id)">
+            <div class="linha">
+              <strong>{{ d.titulo }}</strong>
+              <span class="chip">Em andamento</span>
+            </div>
+            <span class="detalhe">{{ d.participantes.length }} {{ d.participantes.length === 1 ? 'pessoa' : 'pessoas' }} · meta {{ d.meta }} {{ plural(d) }}</span>
+            <div class="barra" aria-hidden="true"><div class="enchimento" [style.width.%]="meuPercentual(d)"></div></div>
+            <span class="detalhe">Você: {{ meuProgresso(d) }} / {{ d.meta }}</span>
+          </button>
+        }
+        @for (d of terminados(); track d.id) {
+          <button type="button" class="cartao-desafio encerrado" (click)="abrir(d.id)">
+            <div class="linha">
+              <strong>{{ d.titulo }}</strong>
+              <span class="chip" [class.cancelado]="d.status === 'cancelado'">{{ d.status === 'encerrado' ? 'Encerrado' : 'Cancelado' }}</span>
+            </div>
+          </button>
+        }
+        @if (desafios.carregado() && desafios.meus().length === 0) {
+          <p class="suave">Você ainda não está em nenhum desafio. Crie o primeiro e convide o pessoal!</p>
+        }
       </section>
 
       <section class="secao">
@@ -81,15 +142,6 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
       </section>
 
       <section class="secao">
-        <h2 class="titulo-serif">Meus desafios</h2>
-        <p class="suave">Você ainda não está em nenhum desafio.</p>
-        <ion-button expand="block" disabled>Criar um desafio (chega no próximo bloco)</ion-button>
-        <p class="suave pequeno">
-          No próximo bloco você poderá escolher o tipo do desafio, convidar as pessoas (elas recebem um aviso) e acompanhar o progresso de cada uma num chat só do desafio.
-        </p>
-      </section>
-
-      <section class="secao">
         <h2 class="titulo-serif">Os níveis</h2>
         @for (n of niveis; track n.nivel) {
           <div class="nivel-linha">
@@ -104,9 +156,6 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
 
       <section class="secao">
         <h2 class="titulo-serif">Placar de troféus</h2>
-        @if (carregando()) {
-          <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
-        }
         @for (m of placar(); track m.id; let i = $index) {
           <div class="placar-linha">
             <span class="pos">{{ i + 1 }}º</span>
@@ -118,11 +167,12 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
             <span class="quantos">🏆 {{ m.vitorias }}</span>
           </div>
         } @empty {
-          @if (!carregando()) {
-            <p class="suave">Ninguém entrou em desafio ainda. Seja a primeira pessoa a competir!</p>
-          }
+          <p class="suave">Ninguém entrou em desafio ainda. Seja a primeira pessoa a competir!</p>
         }
       </section>
+
+      <app-criar-desafio [aberto]="criando()" (fechar)="criando.set(false)"></app-criar-desafio>
+      <app-desafio-detalhe [desafioId]="aberto()" (fechar)="aberto.set(null)"></app-desafio-detalhe>
     </ion-content>
   `,
   styles: [
@@ -135,6 +185,9 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
         margin: 8px 0 0;
         line-height: 1.5;
       }
+      .explicacao ion-button {
+        margin-top: 14px;
+      }
       h2 {
         font-size: 1.5rem;
         margin-bottom: 8px;
@@ -142,6 +195,80 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
       h3 {
         font-size: 1.15rem;
         margin: 16px 0 6px;
+      }
+      .convite {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px 0;
+        border-bottom: 1px solid #f7dde2;
+      }
+      .convite:last-child {
+        border-bottom: none;
+      }
+      .convite .texto {
+        display: flex;
+        flex-direction: column;
+      }
+      .convite .texto span {
+        color: #8c5a68;
+        font-size: 0.85rem;
+      }
+      .botoes {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .cartao-desafio {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 100%;
+        margin-bottom: 10px;
+        padding: 12px 14px;
+        border: 1.5px solid #f0b9c4;
+        border-radius: 16px;
+        background: #fff;
+        font-family: inherit;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .cartao-desafio.encerrado {
+        opacity: 0.8;
+      }
+      .linha {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .chip {
+        flex-shrink: 0;
+        padding: 2px 10px;
+        border-radius: 999px;
+        background: var(--cob-framboesa);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+      .encerrado .chip { background: #c9922b; }
+      .chip.cancelado { background: #8c5a68; }
+      .detalhe {
+        font-size: 0.85rem;
+        color: #8c5a68;
+      }
+      .barra {
+        height: 10px;
+        border-radius: 999px;
+        background: #fde3e7;
+        overflow: hidden;
+      }
+      .enchimento {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #f7b4c0, #d1325f);
+        transition: width 0.6s ease;
       }
       .meu {
         display: flex;
@@ -173,9 +300,6 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
         padding: 10px;
         border-radius: 14px;
         background: #fff3f1;
-      }
-      .pequeno {
-        font-size: 0.85rem;
       }
       .nivel-linha,
       .placar-linha {
@@ -215,8 +339,11 @@ const COR_DO_TROFEU: Record<NivelAvatar, string> = {
 })
 export class DesafiosPage {
   protected readonly auth = inject(AuthService);
+  protected readonly desafios = inject(DesafiosService);
   protected readonly niveis = NIVEIS;
-  protected readonly carregando = signal(true);
+
+  protected readonly criando = signal(false);
+  protected readonly aberto = signal<string | null>(null);
 
   protected readonly vitorias = computed(() => this.auth.perfil()?.vitorias ?? 0);
   protected readonly participacoes = computed(() => this.auth.perfil()?.participacoes ?? 0);
@@ -225,10 +352,13 @@ export class DesafiosPage {
   protected readonly corDoTrofeu = computed(() => COR_DO_TROFEU[this.nivelAtual()]);
   protected readonly trofeusParaMostrar = computed(() => Array.from({ length: Math.min(this.vitorias(), 15) }));
 
+  protected readonly ativos = computed(() => this.desafios.meus().filter((d) => d.status === 'ativo'));
+  protected readonly terminados = computed(() => this.desafios.meus().filter((d) => d.status !== 'ativo'));
+
   // Quantas vitórias faltam para o próximo nível
   protected readonly proximo = computed(() => {
     const v = this.vitorias();
-    const metas: { vitorias: number; nome: string }[] = [
+    const metas = [
       { vitorias: 3, nome: NOMES_DOS_NIVEIS.prata },
       { vitorias: 6, nome: NOMES_DOS_NIVEIS.ouro },
       { vitorias: 10, nome: NOMES_DOS_NIVEIS.diamante },
@@ -246,7 +376,26 @@ export class DesafiosPage {
   );
 
   async ionViewWillEnter() {
-    await this.auth.carregarMembros();
-    this.carregando.set(false);
+    await Promise.all([this.desafios.carregar(), this.auth.carregarMembros(), this.auth.recarregarPerfil()]);
+  }
+
+  protected abrir(id: string) {
+    this.aberto.set(id);
+  }
+
+  protected async responder(id: string, aceitar: boolean) {
+    await this.desafios.responder(id, aceitar);
+  }
+
+  protected plural(d: Desafio): string {
+    return UNIDADES.find((u) => u.valor === d.unidade)?.plural ?? '';
+  }
+
+  protected meuProgresso(d: Desafio): number {
+    return d.participantes.find((p) => p.perfil_id === this.auth.perfil()?.id)?.progresso ?? 0;
+  }
+
+  protected meuPercentual(d: Desafio): number {
+    return Math.min(100, (this.meuProgresso(d) / d.meta) * 100);
   }
 }

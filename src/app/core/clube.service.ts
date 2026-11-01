@@ -3,7 +3,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { DadosDoClube, ResultadoBusca, Sorteio, Sugestao } from './modelos';
 import { SupabaseService } from './supabase.service';
 
-const AUTOR_COM_NIVEL = 'quem:perfis(id, nome, avatar_id, participacoes, vitorias)';
+const AUTOR_COM_NIVEL = 'quem:perfis!sugerido_por(id, nome, avatar_id, participacoes, vitorias)';
 
 // Tudo sobre o clube em si: livro do mês, sugestões, roleta e sorteios.
 @Injectable({ providedIn: 'root' })
@@ -25,7 +25,7 @@ export class ClubeService {
   async carregarClube() {
     const { data } = await this.sb
       .from('clube')
-      .select('data_sorteio, link_meet, livro:livros(id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em)')
+      .select('data_sorteio, link_meet, livro:livros!livro_do_mes_id(id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em)')
       .eq('id', 1)
       .maybeSingle();
     if (data) {
@@ -75,6 +75,15 @@ export class ClubeService {
   async definirDataSorteio(data: string | null): Promise<string> {
     const { error } = await this.sb.from('clube').update({ data_sorteio: data }).eq('id', 1);
     if (error) return 'Não deu para salvar a data agora.';
+    await this.carregarClube();
+    return '';
+  }
+
+  async definirLinkMeet(link: string | null): Promise<string> {
+    const limpo = link?.trim() || null;
+    if (limpo && !/^https:\/\/[^\s]+$/.test(limpo)) return 'O link precisa começar com https://';
+    const { error } = await this.sb.from('clube').update({ link_meet: limpo }).eq('id', 1);
+    if (error) return 'Não deu para salvar o link agora.';
     await this.carregarClube();
     return '';
   }

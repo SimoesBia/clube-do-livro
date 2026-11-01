@@ -18,6 +18,9 @@
     <ion-tab-button tab="desafios">
       <ion-icon [icon]="iconeDesafios"></ion-icon>
       <ion-label>Desafios</ion-label>
+      @if (desafios.convites().length > 0) {
+        <ion-badge color="secondary">{{ desafios.convites().length }}</ion-badge>
+      }
     </ion-tab-button>
 
     <ion-tab-button tab="encontros">

@@ -2,17 +2,32 @@ import { Injectable } from '@angular/core';
 import { ResultadoBusca } from './modelos';
 
 // ============================================================
-// Open Library (https://openlibrary.org): a fonte principal de livros do app.
-// É gratuita e não pede chave. Usamos quatro partes dela:
-//   • Search API    -> procurar livros (título, autor, capa, ano, páginas)
-//   • Trending API  -> livros em alta (mostruário da Biblioteca)
-//   • Subjects API  -> livros por assunto (mostruário e "surpreenda-me")
-//   • Works API     -> descrição completa de um livro
-//   • Covers API    -> as capas
-// Se a Open Library estiver fora do ar, a busca tenta o Google Livros.
+// De onde vêm os livros do app
+//
+//  • Google Livros (em português): títulos, descrições e capas das edições brasileiras.
+//    É a fonte principal, porque a Open Library tem a maior parte do acervo em inglês.
+//  • Open Library (https://openlibrary.org): complementa a busca (filtro de idioma português),
+//    completa capas, ano e páginas que faltarem, guarda o código do livro (link "Ver na Open Library")
+//    e alimenta a categoria "Mundo", com os livros em alta no mundo todo (títulos originais).
+// Os dois serviços são gratuitos e não pedem chave para o uso do clube.
 // ============================================================
 
-interface DocBusca {
+interface VolumeGoogle {
+  id?: string;
+  volumeInfo?: {
+    title?: string;
+    authors?: string[];
+    publishedDate?: string;
+    pageCount?: number;
+    description?: string;
+    language?: string;
+    ratingsCount?: number;
+    averageRating?: number;
+    imageLinks?: { thumbnail?: string; smallThumbnail?: string };
+  };
+}
+
+interface DocOpenLibrary {
   key?: string;
   title?: string;
   author_name?: string[];
@@ -21,38 +36,35 @@ interface DocBusca {
   number_of_pages_median?: number;
 }
 
-interface ObraAssunto {
-  key?: string;
-  title?: string;
-  authors?: { name?: string }[];
-  cover_id?: number;
-  first_publish_year?: number;
+// Um livro com os dados extras que usamos só para escolher e ordenar
+interface Candidato extends ResultadoBusca {
+  idioma: string;
+  avaliacoes: number;
+  nota: number;
 }
 
-interface VolumeGoogle {
-  volumeInfo?: {
-    title?: string;
-    authors?: string[];
-    publishedDate?: string;
-    pageCount?: number;
-    imageLinks?: { thumbnail?: string; smallThumbnail?: string };
-  };
-}
-
-export interface Assunto {
-  id: string; // como a Open Library chama o assunto
+export interface Categoria {
+  id: string;
   nome: string;
+  consulta: string; // o que perguntamos ao Google Livros
+  ordem: 'relevance' | 'newest';
+  anosRecentes?: number; // se informado, dá preferência a livros dos últimos X anos
 }
 
-export const ASSUNTOS: Assunto[] = [
-  { id: 'romance', nome: 'Romance' },
-  { id: 'fantasy', nome: 'Fantasia' },
-  { id: 'mystery_and_detective_stories', nome: 'Mistério' },
-  { id: 'young_adult_fiction', nome: 'Jovem adulto' },
-  { id: 'classic_literature', nome: 'Clássicos' },
-  { id: 'science_fiction', nome: 'Ficção científica' },
-  { id: 'historical_fiction', nome: 'Ficção histórica' },
+export const CATEGORIAS: Categoria[] = [
+  { id: 'alta', nome: '🔥 Em alta', consulta: 'subject:fiction', ordem: 'relevance', anosRecentes: 6 },
+  { id: 'novos', nome: '🆕 Lançamentos', consulta: 'subject:fiction', ordem: 'newest', anosRecentes: 2 },
+  { id: 'romance', nome: 'Romance', consulta: 'subject:romance', ordem: 'relevance' },
+  { id: 'fantasia', nome: 'Fantasia', consulta: 'subject:fantasy', ordem: 'relevance' },
+  { id: 'misterio', nome: 'Mistério', consulta: 'subject:mystery', ordem: 'relevance' },
+  { id: 'jovem', nome: 'Jovem adulto', consulta: 'subject:"young adult fiction"', ordem: 'relevance' },
+  { id: 'classicos', nome: 'Clássicos', consulta: 'subject:classics', ordem: 'relevance' },
+  { id: 'brasileiros', nome: 'Autores brasileiros', consulta: 'subject:"brazilian fiction"', ordem: 'relevance' },
+  { id: 'scifi', nome: 'Ficção científica', consulta: 'subject:"science fiction"', ordem: 'relevance' },
 ];
+
+// Categoria especial: livros em alta no mundo, direto da Open Library (os títulos vêm no idioma original)
+export const CATEGORIA_MUNDO = { id: 'mundo', nome: '🌎 Mundo (Open Library)' };
 
 export interface DetalhesExtras {
   descricao: string | null;
@@ -60,68 +72,160 @@ export interface DetalhesExtras {
   ano: number | null;
 }
 
-const BASE = 'https://openlibrary.org';
+const GOOGLE = 'https://www.googleapis.com/books/v1/volumes';
+const OPEN_LIBRARY = 'https://openlibrary.org';
 
 @Injectable({ providedIn: 'root' })
 export class LivrosApiService {
   private readonly memoria = new Map<string, ResultadoBusca[]>();
 
-  // ----- procurar um livro -----
+  // ----- procurar um livro (português primeiro, Open Library completando) -----
   async buscar(texto: string): Promise<ResultadoBusca[]> {
     const q = texto.trim();
     if (q.length < 2) return [];
-    try {
-      const url = `${BASE}/search.json?q=${encodeURIComponent(q)}&limit=12&fields=key,title,author_name,cover_i,first_publish_year,number_of_pages_median`;
-      const json = (await this.pegar(url)) as { docs?: DocBusca[] };
-      const lista = this.semRepetidos((json.docs ?? []).map((d) => this.deBusca(d)));
-      if (lista.length > 0) return lista.slice(0, 6);
-    } catch {
-      // Open Library fora do ar: tentamos o Google Livros logo abaixo
-    }
-    return this.googleLivros(q);
-  }
 
-  // ----- mostruário: livros em alta hoje -----
-  async emAlta(): Promise<ResultadoBusca[]> {
-    return this.comMemoria('alta', async () => {
-      const json = (await this.pegar(`${BASE}/trending/daily.json?limit=18`)) as { works?: DocBusca[] };
-      return this.semRepetidos((json.works ?? []).map((d) => this.deBusca(d)));
-    });
-  }
-
-  // ----- mostruário: livros de um assunto (com ponto de partida para variar) -----
-  async porAssunto(assunto: string, deslocamento = 0): Promise<ResultadoBusca[]> {
-    return this.comMemoria(`assunto:${assunto}:${deslocamento}`, async () => {
-      const url = `${BASE}/subjects/${encodeURIComponent(assunto)}.json?limit=18&offset=${deslocamento}`;
-      const json = (await this.pegar(url)) as { works?: ObraAssunto[] };
-      return this.semRepetidos((json.works ?? []).map((o) => this.deAssunto(o)));
-    });
-  }
-
-  // ----- descrição, páginas e ano de um livro específico -----
-  async completar(chave: string): Promise<DetalhesExtras> {
-    const vazio: DetalhesExtras = { descricao: null, paginas: null, ano: null };
-    if (!/^OL[0-9]+[A-Z]$/.test(chave)) return vazio;
-    const [obra, busca] = await Promise.allSettled([
-      this.pegar(`${BASE}/works/${chave}.json`),
-      this.pegar(`${BASE}/search.json?q=${encodeURIComponent('key:/works/' + chave)}&fields=number_of_pages_median,first_publish_year&limit=1`),
+    const [google, aberta] = await Promise.allSettled([
+      this.volumes({ q, max: 10 }).then((v) => v.map((x) => this.deGoogle(x))),
+      this.openLibrary(q),
     ]);
+    const principais = google.status === 'fulfilled' ? google.value.filter((c) => c.titulo && c.idioma === 'pt') : [];
+    const complemento = aberta.status === 'fulfilled' ? aberta.value : [];
 
-    let descricao: string | null = null;
-    if (obra.status === 'fulfilled') {
-      const d = (obra.value as { description?: string | { value?: string } }).description;
-      const texto = typeof d === 'string' ? d : d?.value ?? '';
-      descricao = this.limparDescricao(texto);
+    const mapa = new Map<string, ResultadoBusca>();
+    for (const c of principais) {
+      const k = this.chave(c.titulo);
+      if (!mapa.has(k)) mapa.set(k, this.limpo(c));
+    }
+    for (const o of complemento) {
+      const k = this.chave(o.titulo);
+      const ja = mapa.get(k);
+      if (ja) {
+        // o mesmo livro: a Open Library completa o que faltar e dá o código dela
+        ja.capa_url ??= o.capa_url;
+        ja.chave_ol ??= o.chave_ol;
+        ja.ano ??= o.ano;
+        ja.paginas ??= o.paginas;
+      } else {
+        mapa.set(k, o);
+      }
+    }
+    return Array.from(mapa.values()).slice(0, 8);
+  }
+
+  // ----- mostruário da Biblioteca -----
+  async mostruario(categoriaId: string, inicio = 0): Promise<ResultadoBusca[]> {
+    if (categoriaId === CATEGORIA_MUNDO.id) return this.emAltaNoMundo();
+    const cat = CATEGORIAS.find((c) => c.id === categoriaId);
+    if (!cat) return [];
+
+    return this.comMemoria(`cat:${categoriaId}:${inicio}`, async () => {
+      const volumes = await this.volumes({ q: cat.consulta, ordem: cat.ordem, inicio, max: 40 });
+      let candidatos = volumes.map((v) => this.deGoogle(v)).filter((c) => c.titulo && c.capa_url && c.idioma === 'pt');
+
+      if (cat.anosRecentes) {
+        const minimo = new Date().getFullYear() - cat.anosRecentes;
+        const recentes = candidatos.filter((c) => (c.ano ?? 0) >= minimo);
+        if (recentes.length >= 6) candidatos = recentes;
+      }
+      // os mais bem avaliados primeiro (a ordem de antes se mantém nos empates)
+      candidatos.sort((a, b) => b.avaliacoes - a.avaliacoes || b.nota - a.nota);
+      return this.semRepetidos(candidatos.map((c) => this.limpo(c))).slice(0, 18);
+    });
+  }
+
+  // ----- livros em alta no mundo (Open Library, títulos originais) -----
+  async emAltaNoMundo(): Promise<ResultadoBusca[]> {
+    return this.comMemoria('mundo', async () => {
+      const json = (await this.pegar(`${OPEN_LIBRARY}/trending/daily.json?limit=18`)) as { works?: DocOpenLibrary[] };
+      return this.semRepetidos((json.works ?? []).map((d) => this.deOpenLibrary(d)).filter((r) => r.titulo));
+    });
+  }
+
+  // ----- descrição em português, páginas e ano de um livro específico -----
+  async detalhes(l: ResultadoBusca): Promise<DetalhesExtras> {
+    const extras: DetalhesExtras = { descricao: l.descricao ?? null, paginas: l.paginas ?? null, ano: l.ano ?? null };
+
+    if (!extras.descricao || !extras.paginas || !extras.ano) {
+      try {
+        const autor = (l.autor ?? '').split(',')[0].replace(/"/g, '').trim();
+        const titulo = l.titulo.replace(/"/g, '').trim();
+        const q = `intitle:"${titulo}"${autor ? ` inauthor:"${autor}"` : ''}`;
+        const achados = (await this.volumes({ q, max: 5 })).map((v) => this.deGoogle(v)).filter((c) => c.idioma === 'pt');
+        const parecido = achados.find((c) => this.chave(c.titulo) === this.chave(l.titulo)) ?? achados[0];
+        if (parecido) {
+          extras.descricao ??= parecido.descricao ?? null;
+          extras.paginas ??= parecido.paginas ?? null;
+          extras.ano ??= parecido.ano ?? null;
+        }
+      } catch {
+        // sem o Google, seguimos com o que temos
+      }
     }
 
-    let paginas: number | null = null;
-    let ano: number | null = null;
-    if (busca.status === 'fulfilled') {
-      const doc = ((busca.value as { docs?: DocBusca[] }).docs ?? [])[0];
-      paginas = this.numero(doc?.number_of_pages_median, 1, 20000);
-      ano = this.numero(doc?.first_publish_year, 0, 2100);
+    if ((!extras.paginas || !extras.ano) && l.chave_ol && /^OL[0-9]+[A-Z]$/.test(l.chave_ol)) {
+      try {
+        const json = (await this.pegar(
+          `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent('key:/works/' + l.chave_ol)}&fields=number_of_pages_median,first_publish_year&limit=1`,
+        )) as { docs?: DocOpenLibrary[] };
+        const doc = (json.docs ?? [])[0];
+        extras.paginas ??= this.numero(doc?.number_of_pages_median, 1, 20000);
+        extras.ano ??= this.numero(doc?.first_publish_year, 0, 2100);
+      } catch {
+        // tudo bem
+      }
     }
-    return { descricao, paginas, ano };
+    return extras;
+  }
+
+  // ---------- Google Livros ----------
+
+  private async volumes(o: { q: string; ordem?: 'relevance' | 'newest'; inicio?: number; max?: number }): Promise<VolumeGoogle[]> {
+    const url =
+      `${GOOGLE}?q=${encodeURIComponent(o.q)}&langRestrict=pt&printType=books` +
+      `&orderBy=${o.ordem ?? 'relevance'}&startIndex=${o.inicio ?? 0}&maxResults=${o.max ?? 10}`;
+    const json = (await this.pegar(url)) as { items?: VolumeGoogle[] };
+    return json.items ?? [];
+  }
+
+  private deGoogle(v: VolumeGoogle): Candidato {
+    const info = v.volumeInfo ?? {};
+    const capa = info.imageLinks?.thumbnail ?? info.imageLinks?.smallThumbnail ?? null;
+    const ano = Number.parseInt(String(info.publishedDate ?? '').slice(0, 4), 10);
+    return {
+      titulo: String(info.title ?? '').slice(0, 200),
+      autor: Array.isArray(info.authors) && info.authors.length > 0 ? info.authors.slice(0, 2).join(', ').slice(0, 200) : null,
+      capa_url: capa ? String(capa).replace(/^http:/, 'https:').replace('&edge=curl', '') : null,
+      ano: this.numero(ano, 0, 2100),
+      paginas: this.numero(info.pageCount, 1, 20000),
+      descricao: this.limparTexto(info.description),
+      chave_ol: null,
+      idioma: String(info.language ?? ''),
+      avaliacoes: Number(info.ratingsCount ?? 0),
+      nota: Number(info.averageRating ?? 0),
+    };
+  }
+
+  // ---------- Open Library ----------
+
+  // Procura só livros que têm edição em português
+  private async openLibrary(q: string): Promise<ResultadoBusca[]> {
+    const url =
+      `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent(q + ' language:por')}` +
+      `&limit=8&fields=key,title,author_name,cover_i,first_publish_year,number_of_pages_median`;
+    const json = (await this.pegar(url)) as { docs?: DocOpenLibrary[] };
+    return (json.docs ?? []).map((d) => this.deOpenLibrary(d)).filter((r) => r.titulo);
+  }
+
+  private deOpenLibrary(d: DocOpenLibrary): ResultadoBusca {
+    const curta = d.key?.split('/').pop() ?? '';
+    return {
+      titulo: String(d.title ?? '').slice(0, 200),
+      autor: Array.isArray(d.author_name) && d.author_name.length > 0 ? d.author_name.slice(0, 2).join(', ').slice(0, 200) : null,
+      capa_url: d.cover_i && d.cover_i > 0 ? `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg` : null,
+      ano: this.numero(d.first_publish_year, 0, 2100),
+      paginas: this.numero(d.number_of_pages_median, 1, 20000),
+      chave_ol: /^OL[0-9]+[A-Z]$/.test(curta) ? curta : null,
+    };
   }
 
   // ---------- ajudantes ----------
@@ -146,83 +250,45 @@ export class LivrosApiService {
     return lista;
   }
 
-  private capa(id: number | undefined): string | null {
-    return id && id > 0 ? `https://covers.openlibrary.org/b/id/${id}-M.jpg` : null;
-  }
-
-  private chaveCurta(key: string | undefined): string | null {
-    const curta = key?.split('/').pop() ?? '';
-    return /^OL[0-9]+[A-Z]$/.test(curta) ? curta : null;
-  }
-
   private numero(valor: unknown, minimo: number, maximo: number): number | null {
     return typeof valor === 'number' && Number.isFinite(valor) && valor >= minimo && valor <= maximo ? Math.round(valor) : null;
   }
 
-  private deBusca(d: DocBusca): ResultadoBusca {
-    return {
-      titulo: String(d.title ?? '').slice(0, 200),
-      autor: Array.isArray(d.author_name) && d.author_name.length > 0 ? d.author_name.slice(0, 2).join(', ').slice(0, 200) : null,
-      capa_url: this.capa(d.cover_i),
-      ano: this.numero(d.first_publish_year, 0, 2100),
-      paginas: this.numero(d.number_of_pages_median, 1, 20000),
-      chave_ol: this.chaveCurta(d.key),
-    };
-  }
-
-  private deAssunto(o: ObraAssunto): ResultadoBusca {
-    const nomes = (o.authors ?? []).map((a) => a.name).filter((n): n is string => !!n);
-    return {
-      titulo: String(o.title ?? '').slice(0, 200),
-      autor: nomes.length > 0 ? nomes.slice(0, 2).join(', ').slice(0, 200) : null,
-      capa_url: this.capa(o.cover_id),
-      ano: this.numero(o.first_publish_year, 0, 2100),
-      paginas: null,
-      chave_ol: this.chaveCurta(o.key),
-    };
-  }
-
-  // A descrição da Open Library às vezes traz lixo no fim (links, "----------"): ficamos só com o começo
-  private limparDescricao(texto: string): string | null {
-    const inicio = texto.split(/\r?\n\s*-{3,}/)[0] ?? '';
-    const limpo = inicio.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim();
+  // Tira etiquetas HTML e caracteres estranhos das descrições
+  private limparTexto(texto: string | undefined): string | null {
+    if (!texto) return null;
+    const limpo = texto
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!limpo) return null;
     return limpo.length > 700 ? limpo.slice(0, 697).trimEnd() + '…' : limpo;
+  }
+
+  // Título "limpo" para comparar (sem acento, maiúscula ou pontuação)
+  private chave(titulo: string): string {
+    return titulo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  private limpo(c: Candidato): ResultadoBusca {
+    return { titulo: c.titulo, autor: c.autor, capa_url: c.capa_url, ano: c.ano, paginas: c.paginas, descricao: c.descricao, chave_ol: c.chave_ol };
   }
 
   private semRepetidos(lista: ResultadoBusca[]): ResultadoBusca[] {
     const vistos = new Set<string>();
     return lista.filter((r) => {
       if (!r.titulo) return false;
-      const chave = `${r.titulo}|${r.autor ?? ''}`.toLowerCase();
-      if (vistos.has(chave)) return false;
-      vistos.add(chave);
+      const k = this.chave(r.titulo);
+      if (vistos.has(k)) return false;
+      vistos.add(k);
       return true;
     });
-  }
-
-  // ----- plano B: Google Livros -----
-  private async googleLivros(q: string): Promise<ResultadoBusca[]> {
-    try {
-      const json = (await this.pegar(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8&printType=books`,
-      )) as { items?: VolumeGoogle[] };
-      const lista = (json.items ?? []).map((item): ResultadoBusca => {
-        const v = item.volumeInfo ?? {};
-        const capa = v.imageLinks?.thumbnail ?? v.imageLinks?.smallThumbnail ?? null;
-        const ano = Number.parseInt(String(v.publishedDate ?? '').slice(0, 4), 10);
-        return {
-          titulo: String(v.title ?? '').slice(0, 200),
-          autor: Array.isArray(v.authors) && v.authors.length > 0 ? v.authors.join(', ').slice(0, 200) : null,
-          capa_url: capa ? String(capa).replace(/^http:/, 'https:').replace('&edge=curl', '') : null,
-          ano: this.numero(ano, 0, 2100),
-          paginas: this.numero(v.pageCount, 1, 20000),
-          chave_ol: null,
-        };
-      });
-      return this.semRepetidos(lista).slice(0, 6);
-    } catch {
-      return [];
-    }
   }
 }
