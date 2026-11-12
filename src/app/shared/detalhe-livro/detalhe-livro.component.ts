@@ -3,7 +3,7 @@ import { IonButton, IonSpinner } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
 import { ClubeService } from '../../core/clube.service';
 import { LivrosApiService } from '../../core/livros-api.service';
-import { CONTEXTOS, ContextoLeitura, ResultadoBusca } from '../../core/modelos';
+import { CONTEXTOS, ContextoLeitura, ResultadoBusca, STATUS_LEITURA, StatusLeitura } from '../../core/modelos';
 import { LivrosLidosService } from '../../core/livros-lidos.service';
 
 // A "ficha" de um livro: capa, dados, descrição em português e ações (sugerir para a roleta, marcar como lido).
@@ -39,10 +39,20 @@ import { LivrosLidosService } from '../../core/livros-lidos.service';
           @if (carregando()) {
             <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
           }
-          @if (descricao()) {
-            <p class="descricao">{{ descricao() }}</p>
+          @if (descricaoMostrada()) {
+            <p class="descricao">{{ descricaoMostrada() }}</p>
+            @if (traduzida()) {
+              <p class="suave pequeno">
+                Tradução automática.
+                <button type="button" class="link" (click)="traduzida.set(null)">Ver o texto original</button>
+              </p>
+            } @else if (pareceIngles()) {
+              <button type="button" class="pilula traduzir" [disabled]="traduzindo()" (click)="traduzir()">
+                {{ traduzindo() ? 'Traduzindo…' : '🌐 Traduzir para português' }}
+              </button>
+            }
           } @else if (!carregando()) {
-            <p class="suave">Não encontrei uma descrição desse livro em português.</p>
+            <p class="suave">Esse livro ainda não tem descrição por aqui.</p>
           }
 
           @if (l.chave_ol) {
@@ -61,17 +71,45 @@ import { LivrosLidosService } from '../../core/livros-lidos.service';
               }
             }
 
-            <span class="rotulo-campo">Já li este livro</span>
-            <div class="fichas">
-              @for (c of contextos; track c.valor) {
-                <button type="button" class="pilula" [class.ativa]="contexto() === c.valor" (click)="contexto.set(c.valor)">
-                  {{ c.nome }}
-                </button>
+            @if (modo() === 'clube' && auth.eAdmin() && idDoLivro()) {
+              <ion-button expand="block" fill="outline" color="danger" [disabled]="enviando()" (click)="remover()">
+                🗑️ Remover da estante (só administração)
+              </ion-button>
+            }
+
+            @if (auth.perfil()) {
+              <span class="rotulo-campo">Minha leitura</span>
+              @if (registro(); as salvo) {
+                <span class="suave">Salvo em {{ nomeDoStatus(salvo.status_leitura) }}</span>
               }
-            </div>
-            <ion-button expand="block" [disabled]="enviando()" (click)="marcarComoLido()">
-              ✓ Adicionar à minha lista de lidos
-            </ion-button>
+              <div class="fichas">
+                <button type="button" class="pilula" [class.ativa]="querLer()" [attr.aria-pressed]="querLer()"
+                  [disabled]="enviando() || carregandoLeitura()" (click)="alternarQueroLer()">
+                  {{ querLer() ? '♥' : '♡' }} Quero ler
+                </button>
+                @for (status of opcoesLeitura; track status.valor) {
+                  <button type="button" class="pilula" [class.ativa]="statusEscolhido() === status.valor"
+                    [attr.aria-pressed]="statusEscolhido() === status.valor"
+                    [disabled]="enviando() || carregandoLeitura()" (click)="statusEscolhido.set(status.valor)">
+                    {{ status.nome }}
+                  </button>
+                }
+              </div>
+              @if (statusEscolhido(); as status) {
+                @if (status === 'lido') {
+                  <span class="rotulo-campo">Quando você leu?</span>
+                  <div class="fichas">
+                    @for (c of contextos; track c.valor) {
+                      <button type="button" class="pilula" [class.ativa]="contexto() === c.valor"
+                        [disabled]="enviando()" (click)="contexto.set(c.valor)">{{ c.nome }}</button>
+                    }
+                  </div>
+                }
+                <ion-button expand="block" [disabled]="enviando() || carregandoLeitura()" (click)="salvarLeitura(status)">
+                  Salvar status
+                </ion-button>
+              }
+            }
           </div>
 
           @if (mensagem()) {
@@ -153,6 +191,19 @@ import { LivrosLidosService } from '../../core/livros-lidos.service';
         font-size: 0.82rem;
         margin: 4px 0 0;
       }
+      .traduzir {
+        margin-top: 10px;
+      }
+      .link {
+        border: none;
+        background: none;
+        padding: 0;
+        color: var(--cob-framboesa);
+        font-family: inherit;
+        font-weight: 700;
+        text-decoration: underline;
+        cursor: pointer;
+      }
       p {
         margin-bottom: 0;
       }
@@ -163,22 +214,42 @@ export class DetalheLivroComponent {
   private readonly api = inject(LivrosApiService);
   private readonly clube = inject(ClubeService);
   private readonly lidos = inject(LivrosLidosService);
-  private readonly auth = inject(AuthService);
+  protected readonly auth = inject(AuthService);
 
   // O livro que está sendo mostrado (nada = fechado)
   readonly livro = input<ResultadoBusca | null>(null);
   // "clube" = livro da estante do clube; "descobrir" = livro do mostruário (pode ser sugerido para a roleta)
-  readonly modo = input<'clube' | 'descobrir'>('descobrir');
+  readonly modo = input<'clube' | 'descobrir' | 'perfil'>('descobrir');
+  readonly idDoLivro = input<string | null>(null); // só para livros da estante (permite remover)
   readonly fechar = output<void>();
+  readonly removido = output<void>();
 
   protected readonly contextos = CONTEXTOS;
+  protected readonly opcoesLeitura = [
+    { valor: 'lendo', nome: 'Lendo agora' },
+    { valor: 'lido', nome: 'Já li' },
+    { valor: 'abandonado', nome: 'Abandonei' },
+  ] as const;
+  protected readonly statusEscolhido = signal<StatusLeitura | null>(null);
+  protected readonly carregandoLeitura = signal(false);
+  protected readonly registro = computed(() => {
+    const livro = this.livro();
+    return livro ? this.lidos.registro(livro) : undefined;
+  });
+  protected readonly querLer = computed(() => this.registro()?.status_leitura === 'quero_ler');
+  private aberturaLeitura = 0;
+
   protected readonly contexto = signal<ContextoLeitura>('fora_do_clube');
   protected readonly extras = signal<{ descricao: string | null; paginas: number | null; ano: number | null } | null>(null);
   protected readonly carregando = signal(false);
   protected readonly enviando = signal(false);
   protected readonly mensagem = signal('');
+  protected readonly traduzida = signal<string | null>(null);
+  protected readonly traduzindo = signal(false);
 
   protected readonly descricao = computed(() => this.livro()?.descricao ?? this.extras()?.descricao ?? null);
+  protected readonly descricaoMostrada = computed(() => this.traduzida() ?? this.descricao());
+  protected readonly pareceIngles = computed(() => pareceIngles(this.descricao()));
   protected readonly meta = computed(() => {
     const l = this.livro();
     if (!l) return '';
@@ -194,16 +265,21 @@ export class DetalheLivroComponent {
   constructor() {
     effect(() => {
       const l = this.livro();
+      const perfilId = this.auth.perfil()?.id;
+      untracked(() => void this.carregarLeitura(l, perfilId));
+    });
+    effect(() => {
+      const l = this.livro();
       untracked(() => void this.abrir(l));
     });
   }
 
   private async abrir(l: ResultadoBusca | null) {
     this.extras.set(null);
+    this.traduzida.set(null);
     this.mensagem.set('');
     if (!l) return;
-    this.contexto.set(this.modo() === 'clube' ? 'no_clube' : 'fora_do_clube');
-    void this.clube.carregarSugestoes();
+    if (this.modo() === 'descobrir') void this.clube.carregarSugestoes();
     // Se faltar descrição, páginas ou ano, procura (em português) para completar
     if (!l.descricao || !l.paginas || !l.ano) {
       this.carregando.set(true);
@@ -225,6 +301,27 @@ export class DetalheLivroComponent {
     return { ...l, descricao: l.descricao ?? e?.descricao ?? null, paginas: l.paginas ?? e?.paginas ?? null, ano: l.ano ?? e?.ano ?? null };
   }
 
+  protected async traduzir() {
+    const texto = this.descricao();
+    if (!texto) return;
+    this.traduzindo.set(true);
+    try {
+      this.traduzida.set(await this.api.traduzir(texto));
+    } catch {
+      this.mensagem.set('Não consegui traduzir agora. Tente de novo mais tarde.');
+    }
+    this.traduzindo.set(false);
+  }
+
+  protected async remover() {
+    const id = this.idDoLivro();
+    if (!id || !confirm('Remover este livro da estante? As resenhas dele também serão apagadas.')) return;
+    const erro = await this.clube.removerLivro(id);
+    if (erro) return this.mensagem.set(erro);
+    this.removido.emit();
+    this.fechar.emit();
+  }
+
   protected async sugerir() {
     const l = this.completo();
     if (!l) return;
@@ -234,13 +331,58 @@ export class DetalheLivroComponent {
     this.mensagem.set(erro || 'Seu livro entrou na roleta! 🎡');
   }
 
-  protected async marcarComoLido() {
-    const l = this.completo();
-    const meuId = this.auth.perfil()?.id;
-    if (!l || !meuId) return;
-    this.enviando.set(true);
-    const erro = await this.lidos.adicionar(l, this.contexto(), meuId);
-    this.enviando.set(false);
-    this.mensagem.set(erro || 'Adicionado aos seus livros lidos! 📚');
+  private async carregarLeitura(livro: ResultadoBusca | null, perfilId?: string) {
+    const abertura = ++this.aberturaLeitura;
+    this.statusEscolhido.set(null);
+    this.contexto.set(this.modo() === 'clube' ? 'no_clube' : 'fora_do_clube');
+    this.carregandoLeitura.set(!!livro && !!perfilId);
+    if (!livro || !perfilId) return;
+    const erro = await this.lidos.carregarMeus(perfilId);
+    if (abertura !== this.aberturaLeitura) return;
+    this.carregandoLeitura.set(false);
+    const registro = this.registro();
+    if (registro) {
+      this.contexto.set(registro.contexto);
+      if (registro.status_leitura !== 'quero_ler') this.statusEscolhido.set(registro.status_leitura);
+    }
+    if (erro) this.mensagem.set(erro);
   }
+
+  protected nomeDoStatus(status: StatusLeitura): string {
+    return STATUS_LEITURA.find(item => item.valor === status)?.nome ?? '';
+  }
+
+  protected async alternarQueroLer() {
+    await this.salvarLeitura('quero_ler');
+  }
+
+  protected async salvarLeitura(status: StatusLeitura) {
+    const livro = this.completo();
+    const meuId = this.auth.perfil()?.id;
+    if (!livro || !meuId || this.enviando() || this.carregandoLeitura()) return;
+    const registro = this.registro();
+    const retirar = status === 'quero_ler' && registro?.status_leitura === 'quero_ler';
+    const abertura = this.aberturaLeitura;
+    this.enviando.set(true);
+    try {
+      const erro = retirar && registro
+        ? await this.lidos.remover(registro.id, meuId, 'quero_ler')
+        : await this.lidos.salvar(livro, status, meuId, this.contexto());
+      if (abertura !== this.aberturaLeitura) return;
+      if (!erro) this.statusEscolhido.set(status === 'quero_ler' ? null : status);
+      this.mensagem.set(erro || (retirar ? 'Removido de Quero ler.' : 'Leitura atualizada.'));
+    } finally {
+      this.enviando.set(false);
+    }
+  }
+
+}
+
+// Um jeito simples de perceber se um texto está em inglês (conta palavras comuns de cada idioma)
+function pareceIngles(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  const t = ` ${texto.toLowerCase()} `;
+  const ingles = (t.match(/\b(the|and|of|to|is|was|with|his|her|for|that|she|he|in)\b/g) ?? []).length;
+  const portugues = (t.match(/\b(o|a|de|que|e|do|da|em|um|uma|para|com|não|os|as|na|no|se)\b/g) ?? []).length;
+  return ingles >= 4 && ingles > portugues * 1.2;
 }

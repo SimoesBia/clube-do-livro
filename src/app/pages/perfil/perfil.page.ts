@@ -1,4 +1,4 @@
-import { Component, WritableSignal, inject, signal } from '@angular/core';
+import { Component, WritableSignal, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   IonBackButton,
@@ -39,6 +39,7 @@ export class PerfilPage {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
 
+  protected readonly email = computed(() => this.auth.sessao()?.user.email ?? '');
   protected readonly nome = signal('');
   protected readonly aniversario = signal('');
   protected readonly avatarId = signal<string | null>(null);

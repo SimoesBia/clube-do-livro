@@ -179,6 +179,15 @@ export const CONTEXTOS: { valor: ContextoLeitura; nome: string }[] = [
   { valor: 'fora_do_clube', nome: 'Fora do clube' },
 ];
 
+export type StatusLeitura = 'quero_ler' | 'lendo' | 'lido' | 'abandonado';
+
+export const STATUS_LEITURA: { valor: StatusLeitura; nome: string }[] = [
+  { valor: 'quero_ler', nome: 'Quero ler' },
+  { valor: 'lendo', nome: 'Lendo agora' },
+  { valor: 'lido', nome: 'Lidos' },
+  { valor: 'abandonado', nome: 'Abandonados' },
+];
+
 export interface LivroLido {
   id: string;
   perfil_id: string;
@@ -189,6 +198,7 @@ export interface LivroLido {
   paginas: number | null;
   chave_ol: string | null;
   contexto: ContextoLeitura;
+  status_leitura: StatusLeitura;
   criado_em: string;
 }
 
@@ -234,4 +244,15 @@ export interface MensagemDoDesafio {
   texto: string;
   criado_em: string;
   quem: Autor | null;
+}
+
+// ---------- Notificações ----------
+
+export interface Notificacao {
+  id: string;
+  tipo: string;
+  texto: string;
+  rota: string | null;
+  lida: boolean;
+  criado_em: string;
 }

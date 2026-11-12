@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { IonContent, IonLabel, IonSegment, IonSegmentButton, IonSpinner } from '@ionic/angular';
 import { ClubeService } from '../../core/clube.service';
-import { CATEGORIAS, CATEGORIA_MUNDO, LivrosApiService } from '../../core/livros-api.service';
+import { CATEGORIAS, CATEGORIA_MUNDO, CursorBiblioteca, LivrosApiService } from '../../core/livros-api.service';
 import { Livro, ResultadoBusca } from '../../core/modelos';
 import { SupabaseService } from '../../core/supabase.service';
 import { DetalheLivroComponent } from '../../shared/detalhe-livro/detalhe-livro.component';
@@ -73,11 +73,22 @@ type Aba = 'estante' | 'descobrir';
           <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
         }
       } @else {
+        <form class="busca" (submit)="pesquisar($event, campoBusca.value)">
+          <label for="busca-biblioteca">Buscar na biblioteca</label>
+          <div class="busca-controles">
+            <input #campoBusca id="busca-biblioteca" type="search"
+              placeholder="Título ou autor" [value]="busca()" minlength="2" required />
+            <button type="submit" class="pilula ativa">Buscar</button>
+            @if (busca()) {
+              <button type="button" class="pilula" (click)="escolherCategoria(categoria())">Limpar</button>
+            }
+          </div>
+        </form>
         <div class="categorias">
           @for (c of categorias; track c.id) {
-            <button type="button" class="pilula" [class.ativa]="categoria() === c.id" (click)="escolherCategoria(c.id)">{{ c.nome }}</button>
+            <button type="button" class="pilula" [class.ativa]="!busca() && categoria() === c.id" (click)="escolherCategoria(c.id)">{{ c.nome }}</button>
           }
-          <button type="button" class="pilula" [class.ativa]="categoria() === mundo.id" (click)="escolherCategoria(mundo.id)">{{ mundo.nome }}</button>
+          <button type="button" class="pilula" [class.ativa]="!busca() && categoria() === mundo.id" (click)="escolherCategoria(mundo.id)">{{ mundo.nome }}</button>
         </div>
         <div class="surpresa">
           <button type="button" class="pilula ativa" (click)="surpreender()">🎲 Surpreenda-me</button>
@@ -91,6 +102,9 @@ type Aba = 'estante' | 'descobrir';
         }
         @if (erro()) {
           <p class="erro mensagem" role="alert">{{ erro() }}</p>
+        }
+        @if (busca()) {
+          <p class="mensagem">Resultados para “{{ busca() }}”</p>
         }
 
         <div class="vitrine">
@@ -111,16 +125,30 @@ type Aba = 'estante' | 'descobrir';
           }
         </div>
 
-        @if (categoria() === mundo.id) {
-          <p class="credito">Esta categoria vem direto da Open Library e traz os títulos no idioma original (quase sempre inglês).</p>
+        @if (temMais()) {
+          <div class="centro">
+            <button type="button" class="pilula ativa" [disabled]="carregando()" (click)="carregarMais()">
+              {{ carregando() ? 'Carregando…' : 'Carregar mais' }}
+            </button>
+          </div>
         }
-        <p class="credito">
-          Livros em português: <a href="https://books.google.com" target="_blank" rel="noopener noreferrer">Google Livros</a> ·
-          Complemento: <a href="https://openlibrary.org" target="_blank" rel="noopener noreferrer">Open Library</a>
-        </p>
+        @if (!busca() && categoria() === mundo.id) {
+          <p class="credito">Livros internacionais no idioma original · Open Library</p>
+        } @else {
+          <p class="credito">
+            <a href="https://books.google.com" target="_blank" rel="noopener noreferrer">Google Livros</a> ·
+            <a href="https://openlibrary.org" target="_blank" rel="noopener noreferrer">Open Library</a>
+          </p>
+        }
       }
 
-      <app-detalhe-livro [livro]="detalhe()" [modo]="modoDoDetalhe()" (fechar)="detalhe.set(null)"></app-detalhe-livro>
+      <app-detalhe-livro
+        [livro]="detalhe()"
+        [modo]="modoDoDetalhe()"
+        [idDoLivro]="detalheId()"
+        (fechar)="detalhe.set(null)"
+        (removido)="carregarEstante()"
+      ></app-detalhe-livro>
     </ion-content>
   `,
   styles: [
@@ -268,6 +296,19 @@ type Aba = 'estante' | 'descobrir';
       .mensagem {
         margin: 12px 14px;
       }
+      .busca { margin: 12px 14px; }
+      .busca label { display: block; margin-bottom: 6px; font-weight: 700; }
+      .busca-controles { display: flex; flex-wrap: wrap; gap: 6px; }
+      .busca input {
+        flex: 1 1 140px;
+        min-width: 0;
+        border: 1px solid #b78a96;
+        border-radius: 10px;
+        background: var(--ion-background-color, #fff);
+        color: var(--ion-text-color, #222);
+        font: inherit;
+        padding: 8px 10px;
+      }
       .credito {
         margin: 4px 14px 24px;
         text-align: center;
@@ -294,29 +335,35 @@ export class BibliotecaPage {
   protected readonly livros = signal<Livro[]>([]);
   protected readonly carregandoEstante = signal(true);
 
-  // descobrir (Open Library)
+  // Descobrir
   protected readonly categoria = signal('alta');
   protected readonly lista = signal<ResultadoBusca[]>([]);
   protected readonly carregando = signal(false);
   protected readonly erro = signal('');
   protected readonly rotuloSurpresa = signal('');
+  protected readonly busca = signal('');
+  protected readonly temMais = signal(false);
+  private cursor?: CursorBiblioteca;
+  private versaoConsulta = 0;
+  private readonly ordemTitulo = new Intl.Collator('pt-BR', { sensitivity: 'base', numeric: true });
 
   // ficha do livro
   protected readonly detalhe = signal<ResultadoBusca | null>(null);
+  protected readonly detalheId = signal<string | null>(null);
   protected readonly modoDoDetalhe = signal<'clube' | 'descobrir'>('descobrir');
 
   async ionViewWillEnter() {
     void this.clube.carregarClube();
     await this.carregarEstante();
-    if (this.aba() === 'descobrir' && this.lista().length === 0) await this.carregarCategoria();
+    if (this.aba() === 'descobrir' && this.versaoConsulta === 0) await this.carregarCategoria();
   }
 
   protected async trocar(evento: Event) {
     this.aba.set((evento as CustomEvent).detail.value as Aba);
-    if (this.aba() === 'descobrir' && this.lista().length === 0) await this.carregarCategoria();
+    if (this.aba() === 'descobrir' && this.versaoConsulta === 0) await this.carregarCategoria();
   }
 
-  private async carregarEstante() {
+  protected async carregarEstante() {
     const { data } = await this.sb
       .from('livros')
       .select('id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em')
@@ -327,40 +374,85 @@ export class BibliotecaPage {
 
   protected async escolherCategoria(id: string) {
     this.categoria.set(id);
+    this.busca.set('');
+    this.rotuloSurpresa.set('');
+    await this.carregarCategoria();
+  }
+
+  protected async pesquisar(evento: Event, texto: string) {
+    evento.preventDefault();
+    const busca = texto.trim();
+    if (busca.length < 2) return;
+    this.busca.set(busca);
     this.rotuloSurpresa.set('');
     await this.carregarCategoria();
   }
 
   protected async surpreender() {
-    const sorteadas = this.categorias.filter((c) => c.id !== 'novos');
+    const sorteadas = this.categorias.filter(c => c.id !== 'novos' && c.id !== 'alta');
     const categoria = sorteadas[Math.floor(Math.random() * sorteadas.length)];
-    const deslocamento = Math.floor(Math.random() * 5) * 40;
     this.categoria.set(categoria.id);
+    this.busca.set('');
     this.rotuloSurpresa.set(`Surpresa de hoje: ${categoria.nome}`);
-    await this.carregarCategoria(deslocamento);
+    await this.carregarCategoria();
   }
 
-  private async carregarCategoria(deslocamento = 0) {
+  protected async carregarMais() {
+    if (this.carregando() || !this.temMais()) return;
+    await this.carregarCategoria(true);
+  }
+
+  private async carregarCategoria(acrescentar = false) {
+    const versao = ++this.versaoConsulta;
+    if (!acrescentar) {
+      this.cursor = undefined;
+      this.lista.set([]);
+      this.temMais.set(false);
+    }
     this.carregando.set(true);
     this.erro.set('');
+
     try {
-      const livros = await this.api.mostruario(this.categoria(), deslocamento);
+      const categoria = this.categoria();
+      const busca = this.busca();
+      const pagina = await this.api.paginaBiblioteca(categoria, busca, this.cursor);
+      if (versao !== this.versaoConsulta) return;
+
+      const anterior = this.lista();
+      const livros = this.api.juntarLivros(anterior, pagina.livros);
+      if (!busca && categoria === 'novos') {
+        livros.sort((a, b) => (b.ano ?? 0) - (a.ano ?? 0) || this.ordemTitulo.compare(a.titulo, b.titulo));
+      } else if (busca || (categoria !== 'alta' && categoria !== this.mundo.id)) {
+        livros.sort((a, b) => this.ordemTitulo.compare(a.titulo, b.titulo));
+      }
       this.lista.set(livros);
-      if (livros.length === 0) this.erro.set('Não encontrei livros nessa categoria agora.');
+      this.cursor = pagina.proximo ?? undefined;
+      this.temMais.set(pagina.proximo !== null);
+      if (pagina.falhas.length) {
+        this.erro.set(`Falha ao consultar ${pagina.falhas.join(' e ')}. Tente novamente.`);
+      } else if (livros.length === 0 || livros.length === anterior.length) {
+        this.erro.set(pagina.proximo
+          ? 'Nenhum livro novo nesta página. Você pode carregar mais.'
+          : livros.length ? 'Você chegou ao fim dos resultados.' : 'Nenhum livro encontrado.');
+      }
     } catch {
-      this.lista.set([]);
-      this.erro.set('Não consegui buscar os livros agora. Tente de novo em instantes.');
+      if (versao !== this.versaoConsulta) return;
+      this.erro.set('Não consegui buscar os livros agora. Tente novamente.');
+      this.temMais.set(true);
+    } finally {
+      if (versao === this.versaoConsulta) this.carregando.set(false);
     }
-    this.carregando.set(false);
   }
 
   protected abrirDoMostruario(livro: ResultadoBusca) {
     this.modoDoDetalhe.set('descobrir');
+    this.detalheId.set(null);
     this.detalhe.set(livro);
   }
 
   protected abrirDoClube(l: Livro) {
     this.modoDoDetalhe.set('clube');
+    this.detalheId.set(l.id);
     this.detalhe.set({
       titulo: l.titulo,
       autor: l.autor,

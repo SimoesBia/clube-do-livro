@@ -91,6 +91,16 @@ interface Fatia {
         <p class="suave">Quem administra o clube gira a roleta no dia do sorteio. Fique de olho: o resultado aparece aqui para todo mundo ao mesmo tempo!</p>
       }
 
+      @if (auth.eAdmin()) {
+        <div class="ferramentas">
+          <span class="etiqueta">Ferramentas de quem administra</span>
+          <div class="botoes-adm">
+            <button type="button" class="pilula" (click)="limpar(false)">🧹 Limpar sugestões</button>
+            <button type="button" class="pilula" (click)="limpar(true)">♻️ Zerar tudo</button>
+          </div>
+        </div>
+      }
+
       @if (mensagem()) {
         <p class="aviso" role="status">{{ mensagem() }}</p>
       }
@@ -232,6 +242,22 @@ interface Fatia {
         0%, 100% { transform: scale(0.8) rotate(0); opacity: 0.6; }
         50% { transform: scale(1.25) rotate(14deg); opacity: 1; }
       }
+      .ferramentas {
+        margin-top: 16px;
+      }
+      .etiqueta {
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #b58b98;
+      }
+      .botoes-adm {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
       .sugestoes,
       .nova {
         margin-top: 20px;
@@ -367,6 +393,18 @@ export class RoletaComponent implements OnInit, OnDestroy {
       const sorteio = this.clube.sorteioAoVivo();
       if (sorteio) untracked(() => this.girar(sorteio));
     });
+    // Quando o resultado do sorteio é apagado (roleta zerada), a roda volta ao começo
+    effect(() => {
+      const ultimo = this.clube.ultimoSorteio();
+      untracked(() => {
+        if (!ultimo && !this.girando()) {
+          this.foto.set(null);
+          this.resultado.set(null);
+          this.semAnimacao.set(true);
+          this.rotacao.set(0);
+        }
+      });
+    });
     // Quando chegam sugestões novas depois de um sorteio, a roleta volta a mostrar as sugestões atuais
     effect(() => {
       const ativas = this.clube.sugestoes().length;
@@ -445,6 +483,14 @@ export class RoletaComponent implements OnInit, OnDestroy {
       return;
     }
     this.busca()?.limpar();
+  }
+
+  protected async limpar(tudo: boolean) {
+    const aviso = tudo
+      ? 'Zerar TUDO? Isso apaga as sugestões atuais e o resultado dos sorteios antigos.'
+      : 'Tirar todas as sugestões que estão na roleta agora?';
+    if (!confirm(aviso)) return;
+    this.mensagem.set((await this.clube.resetarRoleta(tudo)) || (tudo ? 'Roleta zerada! ♻️' : 'Sugestões limpas! 🧹'));
   }
 
   protected async tirar(id: string) {

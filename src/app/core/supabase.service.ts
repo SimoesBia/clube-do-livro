@@ -8,7 +8,7 @@ export class SupabaseService {
   readonly cliente: SupabaseClient;
 
   constructor() {
-    if (environment.supabaseUrl.startsWith('COLE_AQUI') || environment.supabaseChave.startsWith('COLE_AQUI')) {
+    if (environment.supabaseUrl.startsWith('colar aq') || environment.supabaseChave.startsWith('Colar aq')) {
       throw new Error(
         'Falta colocar a URL e a chave pública do Supabase no arquivo src/environments/environment.ts',
       );

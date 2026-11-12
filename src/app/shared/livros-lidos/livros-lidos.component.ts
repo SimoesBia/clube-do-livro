@@ -2,16 +2,16 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { IonButton, IonSpinner } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
 import { LivrosLidosService } from '../../core/livros-lidos.service';
-import { CONTEXTOS, ContextoLeitura, ResultadoBusca } from '../../core/modelos';
+import { CONTEXTOS, ContextoLeitura, LivroLido, ResultadoBusca, STATUS_LEITURA, StatusLeitura } from '../../core/modelos';
 import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
 
-// "Meus livros lidos": a pessoa vai adicionando tudo que já leu (antes do clube, no clube ou fora dele)
+import { DetalheLivroComponent } from '../detalhe-livro/detalhe-livro.component';
 @Component({
   selector: 'app-livros-lidos',
-  imports: [IonButton, IonSpinner, BuscaLivroComponent],
+  imports: [IonButton, IonSpinner, BuscaLivroComponent, DetalheLivroComponent],
   template: `
     <section class="secao">
-      <h2 class="titulo-serif">Meus livros lidos</h2>
+      <h2 class="titulo-serif">Minha estante</h2>
 
       <div class="contador">
         <strong>{{ lidos.meus().length }}</strong>
@@ -58,7 +58,18 @@ import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
       </div>
 
       <div class="lista">
-        @for (l of lidos.meus(); track l.id) {
+        <div class="fichas" aria-label="Filtrar por status">
+          @for (status of statusLeitura; track status.valor) {
+            <button type="button" class="pilula" [class.ativa]="aba() === status.valor"
+              [attr.aria-pressed]="aba() === status.valor" (click)="aba.set(status.valor)">
+              {{ status.nome }}
+            </button>
+          }
+        </div>
+        @if (carregando()) {
+          <ion-spinner name="dots" aria-label="Carregando estante"></ion-spinner>
+        }
+        @for (l of livrosDaAba(); track l.id) {
           <div class="item">
             <div class="capa" style="width: 38px; height: 54px">
               @if (l.capa_url) {
@@ -67,18 +78,23 @@ import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
                 <span>📖</span>
               }
             </div>
-            <div class="info">
+            <button type="button" class="info" (click)="abrir(l)">
               <strong>{{ l.titulo }}</strong>
               <span>{{ l.autor ?? 'Autor não informado' }}</span>
-              <span class="ctx">{{ nomeDoContexto(l.contexto) }}{{ l.paginas ? ' · ' + l.paginas + ' páginas' : '' }}</span>
-            </div>
-            <button type="button" class="tirar" (click)="remover(l.id)" [attr.aria-label]="'Tirar ' + l.titulo + ' da lista'">✕</button>
+              @if (l.status_leitura === 'lido') {
+                <span class="ctx">{{ nomeDoContexto(l.contexto) }}{{ l.paginas ? ' · ' + l.paginas + ' páginas' : '' }}</span>
+              }
+            </button>
+            <button type="button" class="tirar" [disabled]="enviando()" (click)="remover(l.id)" [attr.aria-label]="'Tirar ' + l.titulo + ' da lista'">✕</button>
           </div>
         } @empty {
-          <p class="suave">Sua lista está vazia. Adicione os livros que você já leu e o contador cresce! 📚</p>
+          @if (!carregando()) {
+            <p class="suave">Nenhum livro nesta lista ainda.</p>
+          }
         }
       </div>
     </section>
+    <app-detalhe-livro [livro]="detalhe()" modo="perfil" (fechar)="detalhe.set(null)"></app-detalhe-livro>
   `,
   styles: [
     `
@@ -142,6 +158,13 @@ import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
         padding: 8px 0;
       }
       .info {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        padding: 0;
+        cursor: pointer;
         display: flex;
         flex-direction: column;
         flex: 1;
@@ -177,6 +200,11 @@ export class LivrosLidosComponent implements OnInit {
   protected readonly lidos = inject(LivrosLidosService);
 
   protected readonly contextos = CONTEXTOS;
+  protected readonly statusLeitura = STATUS_LEITURA;
+  protected readonly aba = signal<StatusLeitura>('lido');
+  protected readonly detalhe = signal<ResultadoBusca | null>(null);
+  protected readonly carregando = signal(false);
+  protected readonly livrosDaAba = computed(() => this.lidos.todos().filter(l => l.status_leitura === this.aba()));
   protected readonly escolhido = signal<ResultadoBusca | null>(null);
   protected readonly contexto = signal<ContextoLeitura>('fora_do_clube');
   protected readonly paginasManual = signal('');
@@ -194,7 +222,14 @@ export class LivrosLidosComponent implements OnInit {
 
   async ngOnInit() {
     const id = this.auth.perfil()?.id;
-    if (id) await this.lidos.carregarMeus(id);
+    if (!id) return;
+    this.carregando.set(true);
+    try {
+      const erro = await this.lidos.carregarMeus(id);
+      if (erro) this.mensagem.set(erro);
+    } finally {
+      this.carregando.set(false);
+    }
   }
 
   protected nomeDoContexto(c: ContextoLeitura): string {
@@ -204,7 +239,7 @@ export class LivrosLidosComponent implements OnInit {
   protected async adicionar() {
     const livro = this.escolhido();
     const meuId = this.auth.perfil()?.id;
-    if (!livro || !meuId) return;
+    if (!livro || !meuId || this.enviando()) return;
     const manual = Math.round(Number(this.paginasManual()));
     const paginas = livro.paginas ?? (manual >= 1 && manual <= 20000 ? manual : null);
 
@@ -216,13 +251,25 @@ export class LivrosLidosComponent implements OnInit {
       this.mensagem.set(erro);
       return;
     }
-    this.mensagem.set('Adicionado! 🎉');
+    this.aba.set('lido');
+    this.mensagem.set('Salvo em Lidos.');
     this.paginasManual.set('');
     this.busca()?.limpar();
   }
 
+  protected abrir(livro: LivroLido) {
+    this.detalhe.set({ ...livro, descricao: null });
+  }
+
   protected async remover(id: string) {
     const meuId = this.auth.perfil()?.id;
-    if (meuId) await this.lidos.remover(id, meuId);
+    if (!meuId || this.enviando()) return;
+    this.enviando.set(true);
+    try {
+      const erro = await this.lidos.remover(id, meuId, this.aba());
+      this.mensagem.set(erro || 'Livro removido da lista.');
+    } finally {
+      this.enviando.set(false);
+    }
   }
 }

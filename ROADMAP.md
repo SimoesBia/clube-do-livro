@@ -11,8 +11,9 @@
 - [x] Cartãozinho de resumo ao tocar no avatar
 - [x] Animações (brilhinhos nos botões, livrinhos balançando, cartões que surgem ao rolar)
 - [x] Desafios completos: criar, convidar, corrida, chat, pódio, troféus e encerramento
+- [x] Central de notificações (sininho) e ferramentas de limpeza para quem administra
 
 ## Depois
-- [ ] Central de notificações (aniversários, convites e resultado do sorteio)
+- [ ] Trocar as bonecas repetidas por novas
 - [ ] Biblioteca digital com arquivos (EPUB e PDF)
 - [ ] Publicação gratuita como PWA e revisão final de segurança

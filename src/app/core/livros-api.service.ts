@@ -1,16 +1,6 @@
 import { Injectable } from '@angular/core';
+import { environment } from '../../environments/environment';
 import { ResultadoBusca } from './modelos';
-
-// ============================================================
-// De onde vêm os livros do app
-//
-//  • Google Livros (em português): títulos, descrições e capas das edições brasileiras.
-//    É a fonte principal, porque a Open Library tem a maior parte do acervo em inglês.
-//  • Open Library (https://openlibrary.org): complementa a busca (filtro de idioma português),
-//    completa capas, ano e páginas que faltarem, guarda o código do livro (link "Ver na Open Library")
-//    e alimenta a categoria "Mundo", com os livros em alta no mundo todo (títulos originais).
-// Os dois serviços são gratuitos e não pedem chave para o uso do clube.
-// ============================================================
 
 interface VolumeGoogle {
   id?: string;
@@ -52,15 +42,15 @@ export interface Categoria {
 }
 
 export const CATEGORIAS: Categoria[] = [
-  { id: 'alta', nome: '🔥 Em alta', consulta: 'subject:fiction', ordem: 'relevance', anosRecentes: 6 },
-  { id: 'novos', nome: '🆕 Lançamentos', consulta: 'subject:fiction', ordem: 'newest', anosRecentes: 2 },
-  { id: 'romance', nome: 'Romance', consulta: 'subject:romance', ordem: 'relevance' },
-  { id: 'fantasia', nome: 'Fantasia', consulta: 'subject:fantasy', ordem: 'relevance' },
-  { id: 'misterio', nome: 'Mistério', consulta: 'subject:mystery', ordem: 'relevance' },
-  { id: 'jovem', nome: 'Jovem adulto', consulta: 'subject:"young adult fiction"', ordem: 'relevance' },
-  { id: 'classicos', nome: 'Clássicos', consulta: 'subject:classics', ordem: 'relevance' },
-  { id: 'brasileiros', nome: 'Autores brasileiros', consulta: 'subject:"brazilian fiction"', ordem: 'relevance' },
-  { id: 'scifi', nome: 'Ficção científica', consulta: 'subject:"science fiction"', ordem: 'relevance' },
+  { id: 'alta', nome: '🔥 Em alta', consulta: '', ordem: 'relevance' },
+  { id: 'novos', nome: '🆕 Lançamentos', consulta: 'ficção', ordem: 'relevance', anosRecentes: 2 },
+  { id: 'romance', nome: 'Romance', consulta: 'romance literário', ordem: 'relevance' },
+  { id: 'fantasia', nome: 'Fantasia', consulta: 'fantasia', ordem: 'relevance' },
+  { id: 'misterio', nome: 'Mistério', consulta: 'mistério', ordem: 'relevance' },
+  { id: 'jovem', nome: 'Jovem adulto', consulta: 'ficção juvenil', ordem: 'relevance' },
+  { id: 'classicos', nome: 'Clássicos', consulta: 'clássicos', ordem: 'relevance' },
+  { id: 'brasileiros', nome: 'Autores brasileiros', consulta: 'literatura brasileira', ordem: 'relevance' },
+  { id: 'scifi', nome: 'Ficção científica', consulta: '"ficção científica"', ordem: 'relevance' },
 ];
 
 // Categoria especial: livros em alta no mundo, direto da Open Library (os títulos vêm no idioma original)
@@ -73,7 +63,33 @@ export interface DetalhesExtras {
 }
 
 const GOOGLE = 'https://www.googleapis.com/books/v1/volumes';
+// Chave do Google Livros configurada no ambiente do app.
+const CHAVE_GOOGLE = (environment as unknown as { googleLivrosChave?: string }).googleLivrosChave ?? '';
 const OPEN_LIBRARY = 'https://openlibrary.org';
+
+const TAMANHO_PAGINA = 20;
+const CAMPOS_OPEN_LIBRARY = 'key,title,author_name,cover_i,first_publish_year,number_of_pages_median';
+const ASSUNTOS_OPEN_LIBRARY: Record<string, string> = {
+  romance: 'Romance fiction',
+  fantasia: 'Fantasy fiction',
+  misterio: 'Mystery fiction',
+  jovem: 'Young adult fiction',
+  classicos: 'Classics',
+  brasileiros: 'Brazilian literature',
+  scifi: 'Science fiction',
+};
+const CONSULTAS_LANCAMENTOS = ['ficção', 'romance', 'fantasia', 'mistério', 'não ficção', 'biografia', 'história'];
+
+export interface CursorBiblioteca {
+  google: (number | null)[];
+  openLibrary: number | null;
+}
+
+export interface PaginaBiblioteca {
+  livros: ResultadoBusca[];
+  proximo: CursorBiblioteca | null;
+  falhas: string[];
+}
 
 @Injectable({ providedIn: 'root' })
 export class LivrosApiService {
@@ -88,7 +104,7 @@ export class LivrosApiService {
       this.volumes({ q, max: 10 }).then((v) => v.map((x) => this.deGoogle(x))),
       this.openLibrary(q),
     ]);
-    const principais = google.status === 'fulfilled' ? google.value.filter((c) => c.titulo && c.idioma === 'pt') : [];
+    const principais = google.status === 'fulfilled' ? google.value.filter((c) => c.titulo && /^pt(?:-|$)/i.test(c.idioma)) : [];
     const complemento = aberta.status === 'fulfilled' ? aberta.value : [];
 
     const mapa = new Map<string, ResultadoBusca>();
@@ -112,25 +128,130 @@ export class LivrosApiService {
     return Array.from(mapa.values()).slice(0, 8);
   }
 
-  // ----- mostruário da Biblioteca -----
-  async mostruario(categoriaId: string, inicio = 0): Promise<ResultadoBusca[]> {
-    if (categoriaId === CATEGORIA_MUNDO.id) return this.emAltaNoMundo();
-    const cat = CATEGORIAS.find((c) => c.id === categoriaId);
-    if (!cat) return [];
+  async paginaBiblioteca(
+    categoriaId: string,
+    busca = '',
+    cursor?: CursorBiblioteca,
+  ): Promise<PaginaBiblioteca> {
+    const cat = CATEGORIAS.find(c => c.id === categoriaId);
+    const emAlta = !busca && categoriaId === 'alta';
+    const mundo = !busca && categoriaId === CATEGORIA_MUNDO.id;
+    const lancamentos = !busca && categoriaId === 'novos';
+    const anoMinimo = new Date().getFullYear() - (cat?.anosRecentes ?? 2);
+    const consultas = busca ? [busca] : lancamentos ? CONSULTAS_LANCAMENTOS :
+      cat?.consulta ? [cat.consulta] : [];
+    const atual = cursor ?? { google: consultas.map(() => 0), openLibrary: 0 };
 
-    return this.comMemoria(`cat:${categoriaId}:${inicio}`, async () => {
-      const volumes = await this.volumes({ q: cat.consulta, ordem: cat.ordem, inicio, max: 40 });
-      let candidatos = volumes.map((v) => this.deGoogle(v)).filter((c) => c.titulo && c.capa_url && c.idioma === 'pt');
+    const assunto = ASSUNTOS_OPEN_LIBRARY[categoriaId];
+    const qAberta = busca
+      ? '"' + busca.replace(/["\\]/g, ' ').trim() + '"'
+      : lancamentos ? `first_publish_year:[${anoMinimo} TO *]`
+        : emAlta ? 'trending_score_hourly_sum:[1 TO *]'
+          : assunto ? `subject:"${assunto}"` : (cat?.consulta ?? '');
 
-      if (cat.anosRecentes) {
-        const minimo = new Date().getFullYear() - cat.anosRecentes;
-        const recentes = candidatos.filter((c) => (c.ano ?? 0) >= minimo);
-        if (recentes.length >= 6) candidatos = recentes;
+    const google = Promise.allSettled(consultas.map(async (q, indice) => {
+      const inicio = atual.google[indice];
+      if (inicio == null) return { livros: [], proximo: null };
+      const volumes = await this.volumes({ q, ordem: busca ? 'relevance' : cat?.ordem, inicio, max: TAMANHO_PAGINA });
+      const livros = volumes.map(v => this.deGoogle(v)).filter(c =>
+        c.titulo && /^pt(?:-|$)/i.test(c.idioma) &&
+        (!lancamentos || (c.ano ?? 0) >= anoMinimo),
+      ).map(c => this.limpo(c));
+      return { livros, proximo: volumes.length ? inicio + volumes.length : null };
+    }));
+
+    const aberta = Promise.allSettled([this.paginaOpenLibrary(
+      qAberta, atual.openLibrary, mundo, emAlta ? 'trending' : lancamentos ? 'new' : '',
+    )]);
+    const [resultadosGoogle, [resultadoAberto]] = await Promise.all([google, aberta]);
+    const falhas = new Set<string>();
+    const livrosGoogle: ResultadoBusca[] = [];
+    const proximosGoogle = resultadosGoogle.map((resultado, indice) => {
+      if (resultado.status === 'rejected') {
+        falhas.add('Google Livros');
+        return atual.google[indice];
       }
-      // os mais bem avaliados primeiro (a ordem de antes se mantém nos empates)
-      candidatos.sort((a, b) => b.avaliacoes - a.avaliacoes || b.nota - a.nota);
-      return this.semRepetidos(candidatos.map((c) => this.limpo(c))).slice(0, 18);
+      livrosGoogle.push(...resultado.value.livros);
+      return resultado.value.proximo;
     });
+
+    let livrosAbertos: ResultadoBusca[] = [];
+    let proximoAberto = atual.openLibrary;
+    if (resultadoAberto.status === 'fulfilled') {
+      livrosAbertos = resultadoAberto.value.livros;
+      proximoAberto = resultadoAberto.value.proximo;
+    } else {
+      falhas.add('Open Library');
+    }
+
+    // A popularidade vem do catálogo de tendências. O Google complementa
+    // os dados das obras encontradas, sem inserir títulos fora desse ranking.
+    if (emAlta) {
+      const edicoes = await Promise.allSettled(livrosAbertos.slice(0, 3).map(async livro => {
+        const titulo = livro.titulo.replace(/"/g, '');
+        const autor = (livro.autor ?? '').split(',')[0].replace(/"/g, '').trim();
+        const q = `intitle:"${titulo}"${autor ? ` inauthor:"${autor}"` : ''}`;
+        const volumes = await this.volumes({ q, max: 5 });
+        return volumes.map(v => this.deGoogle(v)).find(c =>
+          /^pt(?:-|$)/i.test(c.idioma) && this.chave(c.titulo) === this.chave(livro.titulo) &&
+          autor && this.chave(c.autor ?? '').includes(this.chave(autor)),
+        );
+      }));
+      livrosAbertos = livrosAbertos.map((livro, indice) => {
+        const edicao = edicoes[indice];
+        if (edicao?.status === 'rejected') falhas.add('Google Livros');
+        if (edicao?.status !== 'fulfilled' || !edicao.value) return livro;
+        const dados = this.limpo(edicao.value);
+        return { ...livro, descricao: dados.descricao, capa_url: dados.capa_url ?? livro.capa_url,
+          paginas: dados.paginas ?? livro.paginas };
+      });
+    }
+
+    return {
+      livros: this.juntarLivros(livrosGoogle, livrosAbertos),
+      proximo: proximoAberto !== null || proximosGoogle.some(inicio => inicio !== null)
+        ? { google: proximosGoogle, openLibrary: proximoAberto } : null,
+      falhas: [...falhas],
+    };
+  }
+
+  private async paginaOpenLibrary(
+    q: string, inicio: number | null, mundo: boolean, ordem: string,
+  ): Promise<{ livros: ResultadoBusca[]; proximo: number | null }> {
+    if (inicio === null) return { livros: [], proximo: null };
+    const url = mundo
+      ? `${OPEN_LIBRARY}/trending/daily.json?limit=${TAMANHO_PAGINA}&page=${Math.floor(inicio / TAMANHO_PAGINA) + 1}`
+      : `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent(q)}&limit=${TAMANHO_PAGINA}&offset=${inicio}` +
+        `&fields=${CAMPOS_OPEN_LIBRARY}${ordem ? `&sort=${ordem}` : ''}`;
+    const json = (await this.pegar(url)) as {
+      docs?: DocOpenLibrary[]; works?: DocOpenLibrary[]; numFound?: number; num_found?: number;
+    };
+    const docs = (mundo ? json.works : json.docs) ?? [];
+    const total = json.numFound ?? json.num_found;
+    const proximo = inicio + docs.length;
+    return {
+      livros: docs.map(d => this.deOpenLibrary(d)).filter(l => l.titulo),
+      proximo: docs.length && (total != null ? proximo < total : docs.length === TAMANHO_PAGINA)
+        ? proximo : null,
+    };
+  }
+
+  juntarLivros(atuais: ResultadoBusca[], novos: ResultadoBusca[]): ResultadoBusca[] {
+    const livros = new Map<string, ResultadoBusca>();
+    for (const livro of [...atuais, ...novos]) {
+      const autor = (livro.autor ?? '').split(',')[0];
+      const chave = `${this.chave(livro.titulo)}|${this.chave(autor)}`;
+      const anterior = livros.get(chave);
+      livros.set(chave, anterior ? {
+        ...anterior,
+        capa_url: anterior.capa_url ?? livro.capa_url,
+        descricao: anterior.descricao ?? livro.descricao,
+        paginas: anterior.paginas ?? livro.paginas,
+        ano: anterior.ano ?? livro.ano,
+        chave_ol: anterior.chave_ol ?? livro.chave_ol,
+      } : livro);
+    }
+    return [...livros.values()];
   }
 
   // ----- livros em alta no mundo (Open Library, títulos originais) -----
@@ -141,7 +262,8 @@ export class LivrosApiService {
     });
   }
 
-  // ----- descrição em português, páginas e ano de um livro específico -----
+  // ----- descrição, páginas e ano de um livro específico -----
+  // Tenta o Google Livros (em português); se não achar descrição, usa a da Open Library (geralmente em inglês).
   async detalhes(l: ResultadoBusca): Promise<DetalhesExtras> {
     const extras: DetalhesExtras = { descricao: l.descricao ?? null, paginas: l.paginas ?? null, ano: l.ano ?? null };
 
@@ -150,7 +272,7 @@ export class LivrosApiService {
         const autor = (l.autor ?? '').split(',')[0].replace(/"/g, '').trim();
         const titulo = l.titulo.replace(/"/g, '').trim();
         const q = `intitle:"${titulo}"${autor ? ` inauthor:"${autor}"` : ''}`;
-        const achados = (await this.volumes({ q, max: 5 })).map((v) => this.deGoogle(v)).filter((c) => c.idioma === 'pt');
+        const achados = (await this.volumes({ q, max: 5 })).map((v) => this.deGoogle(v)).filter((c) => /^pt(?:-|$)/i.test(c.idioma));
         const parecido = achados.find((c) => this.chave(c.titulo) === this.chave(l.titulo)) ?? achados[0];
         if (parecido) {
           extras.descricao ??= parecido.descricao ?? null;
@@ -158,23 +280,83 @@ export class LivrosApiService {
           extras.ano ??= parecido.ano ?? null;
         }
       } catch {
-        // sem o Google, seguimos com o que temos
+        // sem o Google, seguimos para a Open Library
       }
     }
 
-    if ((!extras.paginas || !extras.ano) && l.chave_ol && /^OL[0-9]+[A-Z]$/.test(l.chave_ol)) {
+    if (!extras.descricao || !extras.paginas || !extras.ano) {
       try {
-        const json = (await this.pegar(
-          `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent('key:/works/' + l.chave_ol)}&fields=number_of_pages_median,first_publish_year&limit=1`,
-        )) as { docs?: DocOpenLibrary[] };
-        const doc = (json.docs ?? [])[0];
-        extras.paginas ??= this.numero(doc?.number_of_pages_median, 1, 20000);
-        extras.ano ??= this.numero(doc?.first_publish_year, 0, 2100);
+        const chave = l.chave_ol ?? (await this.acharNaOpenLibrary(l));
+        if (chave && /^OL[0-9]+[A-Z]$/.test(chave)) {
+          const [obra, busca] = await Promise.allSettled([
+            this.pegar(`${OPEN_LIBRARY}/works/${chave}.json`),
+            this.pegar(`${OPEN_LIBRARY}/search.json?q=${encodeURIComponent('key:/works/' + chave)}&fields=number_of_pages_median,first_publish_year&limit=1`),
+          ]);
+          if (obra.status === 'fulfilled' && !extras.descricao) {
+            const d = (obra.value as { description?: string | { value?: string } }).description;
+            extras.descricao = this.limparDescricaoOpenLibrary(typeof d === 'string' ? d : d?.value ?? '');
+          }
+          if (busca.status === 'fulfilled') {
+            const doc = ((busca.value as { docs?: DocOpenLibrary[] }).docs ?? [])[0];
+            extras.paginas ??= this.numero(doc?.number_of_pages_median, 1, 20000);
+            extras.ano ??= this.numero(doc?.first_publish_year, 0, 2100);
+          }
+        }
       } catch {
-        // tudo bem
+        // tudo bem: mostramos só o que temos
       }
     }
     return extras;
+  }
+
+  // Procura o código do livro na Open Library pelo título e autor
+  private async acharNaOpenLibrary(l: ResultadoBusca): Promise<string | null> {
+    const autor = (l.autor ?? '').split(',')[0].trim();
+    const url =
+      `${OPEN_LIBRARY}/search.json?title=${encodeURIComponent(l.titulo)}` +
+      `${autor ? `&author=${encodeURIComponent(autor)}` : ''}&limit=1&fields=key`;
+    const json = (await this.pegar(url)) as { docs?: DocOpenLibrary[] };
+    const curta = (json.docs ?? [])[0]?.key?.split('/').pop() ?? '';
+    return /^OL[0-9]+[A-Z]$/.test(curta) ? curta : null;
+  }
+
+  private limparDescricaoOpenLibrary(texto: string): string | null {
+    const inicio = texto.split(/\r?\n\s*-{3,}/)[0] ?? '';
+    return this.limparTexto(inicio.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'));
+  }
+
+  // ----- tradução (inglês para português) com o serviço gratuito MyMemory -----
+  async traduzir(texto: string): Promise<string> {
+    const partes = this.dividir(texto, 440);
+    const saida: string[] = [];
+    for (const parte of partes) {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(parte)}&langpair=en|pt-BR`;
+      const json = (await this.pegar(url)) as { responseData?: { translatedText?: string } };
+      const traduzido = json.responseData?.translatedText ?? '';
+      if (!traduzido || traduzido.toUpperCase().includes('MYMEMORY WARNING')) throw new Error('Tradução indisponível');
+      saida.push(this.limparTexto(traduzido) ?? '');
+    }
+    return saida.join(' ').trim();
+  }
+
+  // Quebra o texto em pedaços pequenos, sempre no fim de uma frase
+  private dividir(texto: string, limite: number): string[] {
+    const frases = texto.match(/[^.!?]+[.!?]*\s*/g) ?? [texto];
+    const partes: string[] = [];
+    let atual = '';
+    for (const frase of frases) {
+      if ((atual + frase).length > limite && atual) {
+        partes.push(atual.trim());
+        atual = '';
+      }
+      atual += frase;
+      while (atual.length > limite) {
+        partes.push(atual.slice(0, limite));
+        atual = atual.slice(limite);
+      }
+    }
+    if (atual.trim()) partes.push(atual.trim());
+    return partes;
   }
 
   // ---------- Google Livros ----------
@@ -182,7 +364,8 @@ export class LivrosApiService {
   private async volumes(o: { q: string; ordem?: 'relevance' | 'newest'; inicio?: number; max?: number }): Promise<VolumeGoogle[]> {
     const url =
       `${GOOGLE}?q=${encodeURIComponent(o.q)}&langRestrict=pt&printType=books` +
-      `&orderBy=${o.ordem ?? 'relevance'}&startIndex=${o.inicio ?? 0}&maxResults=${o.max ?? 10}`;
+      `&orderBy=${o.ordem ?? 'relevance'}&startIndex=${o.inicio ?? 0}&maxResults=${o.max ?? 10}` +
+      (CHAVE_GOOGLE ? `&key=${encodeURIComponent(CHAVE_GOOGLE)}` : '');
     const json = (await this.pegar(url)) as { items?: VolumeGoogle[] };
     return json.items ?? [];
   }
@@ -235,7 +418,7 @@ export class LivrosApiService {
     const relogio = setTimeout(() => controle.abort(), 9000);
     try {
       const resposta = await fetch(url, { signal: controle.signal });
-      if (!resposta.ok) throw new Error('Serviço indisponível');
+      if (!resposta.ok) throw new Error(`Serviço respondeu com o código ${resposta.status}`);
       return await resposta.json();
     } finally {
       clearTimeout(relogio);

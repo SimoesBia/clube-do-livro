@@ -29,10 +29,11 @@ export class ClubeService {
       .eq('id', 1)
       .maybeSingle();
     if (data) {
+      const livro = Array.isArray(data.livro) ? data.livro[0] : data.livro;
       this.dados.set({
         data_sorteio: data.data_sorteio ?? null,
         link_meet: data.link_meet ?? null,
-        livro: (data.livro as unknown as DadosDoClube['livro']) ?? null,
+        livro: (livro as unknown as DadosDoClube['livro']) ?? null,
       });
     }
   }
@@ -76,6 +77,32 @@ export class ClubeService {
     const { error } = await this.sb.from('clube').update({ data_sorteio: data }).eq('id', 1);
     if (error) return 'Não deu para salvar a data agora.';
     await this.carregarClube();
+    return '';
+  }
+
+  // Tira o livro do mês (o livro continua na estante)
+  async limparLivroDoMes(): Promise<string> {
+    const { error } = await this.sb.from('clube').update({ livro_do_mes_id: null }).eq('id', 1);
+    if (error) return 'Não deu para tirar o livro do mês agora.';
+    await this.carregarClube();
+    return '';
+  }
+
+  // Apaga um livro da estante (as resenhas dele vão junto)
+  async removerLivro(id: string): Promise<string> {
+    const { error } = await this.sb.from('livros').delete().eq('id', id);
+    if (error) return 'Não deu para remover o livro agora.';
+    await this.carregarClube();
+    return '';
+  }
+
+  // Zera a roleta: só as sugestões atuais (tudo = false) ou também os sorteios antigos (tudo = true)
+  async resetarRoleta(tudo: boolean): Promise<string> {
+    const { error } = await this.sb.rpc('resetar_roleta', { p_tudo: tudo });
+    if (error) return 'Não deu para zerar a roleta agora.';
+    this.sorteioAoVivo.set(null);
+    if (tudo) this.ultimoSorteio.set(null);
+    await this.carregar();
     return '';
   }
 
@@ -139,6 +166,7 @@ export class ClubeService {
     this.canal = this.sb
       .channel('clube-ao-vivo')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sorteios' }, (p) => this.aoVivo(p.new as Sorteio))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'sorteios' }, () => void this.carregarUltimoSorteio())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sugestoes' }, () => void this.carregarSugestoes())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clube' }, () => void this.carregarClube())
       .subscribe();

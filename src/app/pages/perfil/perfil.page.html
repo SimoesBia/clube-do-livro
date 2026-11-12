@@ -31,6 +31,15 @@
         [value]="aniversario()"
         (ionInput)="digitar(aniversario, $event)"
       ></ion-input>
+      <ion-input
+        label="E-mail da conta"
+        labelPlacement="stacked"
+        fill="outline"
+        type="email"
+        [value]="email()"
+        [readonly]="true"
+      ></ion-input>
+      <p class="suave dica-email">É com este e-mail que você entra no app. Anote para não esquecer!</p>
     </section>
 
     <app-livros-lidos></app-livros-lidos>

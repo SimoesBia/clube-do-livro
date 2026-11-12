@@ -21,10 +21,11 @@ Aplicativo para o meu clube do livro, que antes funcionava só num grupo de What
 - **Encontros**: calendário de dias livres com "mapa de calor" dos melhores dias, recadinhos por mês e link do encontro online
 - **Resenhas** no estilo "ficha de leitura": nota, tempo de leitura, aviso de spoiler, curtidas e comentários
 - **Desafios de leitura**: criar desafios (por livros, páginas ou minutos), convidar pessoas, "corrida" com o avatar de cada participante, chat do desafio, pódio de 1º a 3º (empate divide) e troféus que atualizam o aro do avatar
+- **Notificações** (sininho): convites de desafio, resultado do sorteio, novo livro do mês, comentários e curtidas nas suas resenhas, e aniversários do dia, tudo ao vivo
+- Ferramentas de quem administra: escolher e tirar o livro do mês, remover livros da estante, zerar a roleta e definir o link do encontro
 - Animações: brilhinhos ao tocar nos botões, cartões que surgem ao rolar e detalhes que se mexem
 
 **Próximos passos**
-- Central de notificações (aniversários, convites e resultado do sorteio)
 - Biblioteca digital com arquivos (EPUB e PDF)
 - Publicação gratuita como PWA
 
@@ -35,7 +36,7 @@ Aplicativo para o meu clube do livro, que antes funcionava só num grupo de What
 | **Google Livros** (em português) | busca, títulos, descrições, capas e categorias das edições brasileiras |
 | **Open Library** | complementa a busca (filtro de idioma português), completa capas, ano e páginas, guarda o código da obra e alimenta a categoria "Mundo" (livros em alta no mundo, via Trending API) |
 
-A Open Library tem a maior parte do acervo em inglês, por isso o Google Livros é a fonte principal dos textos em português. As duas APIs são gratuitas e não pedem chave para o uso do clube.
+A Open Library tem a maior parte do acervo em inglês, por isso o Google Livros é a fonte principal dos textos em português. Se o Google não responder, o app mostra livros da Open Library que têm edição em português. Descrições em inglês podem ser traduzidas com um toque (serviço gratuito MyMemory). O Google Livros pode limitar as buscas sem chave; criar uma chave gratuita é opcional (`googleLivrosChave` no `environment.ts`).
 
 ## Tecnologias
 
@@ -81,6 +82,7 @@ ionic serve
 4. `04_uma_sugestao_por_pessoa.sql` — limite de 1 sugestão por pessoa (opcional se o 03 já foi rodado na versão nova)
 5. `05_bloco3.sql` — dados extras dos livros, livros lidos, curtidas e sorteio atualizado
 6. `06_bloco4_desafios.sql` — desafios, convites, corrida, chat, troféus e segurança
+7. `07_ajustes_e_notificacoes.sql` — ferramentas de limpeza e notificações
 
 Depois, em *Authentication*, desligue "Confirm email" para testar, crie sua conta no app e torne-a administradora (instruções no final do `03_bloco2.sql`).
 

@@ -50,6 +50,10 @@ import { BuscaLivroComponent } from '../busca-livro/busca-livro.component';
             (change)="mudarData($event)"
           />
 
+          @if (clube.dados().livro) {
+            <button type="button" class="pilula" (click)="tirarLivro()">Tirar o livro do mês</button>
+          }
+
           <button type="button" class="pilula" [class.ativa]="aberto()" (click)="aberto.set(!aberto())">
             {{ aberto() ? 'Fechar' : 'Escolher o livro do mês à mão' }}
           </button>
@@ -150,6 +154,11 @@ export class LivroDoMesComponent {
     this.mensagem.set('Livro do mês atualizado! 🎉');
     this.busca()?.limpar();
     this.aberto.set(false);
+  }
+
+  protected async tirarLivro() {
+    if (!confirm('Tirar o livro do mês? Ele continua na estante da Biblioteca.')) return;
+    this.mensagem.set((await this.clube.limparLivroDoMes()) || 'Livro do mês removido.');
   }
 
   protected async mudarData(evento: Event) {
