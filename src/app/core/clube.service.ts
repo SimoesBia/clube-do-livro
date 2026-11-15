@@ -13,7 +13,6 @@ export class ClubeService {
   readonly dados = signal<DadosDoClube>({ data_sorteio: null, link_meet: null, livro: null });
   readonly sugestoes = signal<Sugestao[]>([]);
   readonly ultimoSorteio = signal<Sorteio | null>(null);
-  // Quando alguém gira a roleta, este valor muda e a roleta de todo mundo gira junto
   readonly sorteioAoVivo = signal<Sorteio | null>(null);
 
   private canal: RealtimeChannel | null = null;
@@ -57,9 +56,6 @@ export class ClubeService {
     this.ultimoSorteio.set((data as Sorteio | null) ?? null);
   }
 
-  // ----- quem administra -----
-
-  // Devolve um texto de erro (ou vazio se deu certo)
   async definirLivroDoMes(livro: ResultadoBusca): Promise<string> {
     const { data, error } = await this.sb
       .from('livros')
@@ -80,7 +76,7 @@ export class ClubeService {
     return '';
   }
 
-  // Tira o livro do mês (o livro continua na estante)
+  
   async limparLivroDoMes(): Promise<string> {
     const { error } = await this.sb.from('clube').update({ livro_do_mes_id: null }).eq('id', 1);
     if (error) return 'Não deu para tirar o livro do mês agora.';
@@ -88,7 +84,7 @@ export class ClubeService {
     return '';
   }
 
-  // Apaga um livro da estante (as resenhas dele vão junto)
+  
   async removerLivro(id: string): Promise<string> {
     const { error } = await this.sb.from('livros').delete().eq('id', id);
     if (error) return 'Não deu para remover o livro agora.';
@@ -96,7 +92,7 @@ export class ClubeService {
     return '';
   }
 
-  // Zera a roleta: só as sugestões atuais (tudo = false) ou também os sorteios antigos (tudo = true)
+  
   async resetarRoleta(tudo: boolean): Promise<string> {
     const { error } = await this.sb.rpc('resetar_roleta', { p_tudo: tudo });
     if (error) return 'Não deu para zerar a roleta agora.';
@@ -126,7 +122,7 @@ export class ClubeService {
     return '';
   }
 
-  // ----- sugestões -----
+  
 
   async sugerir(livro: ResultadoBusca): Promise<string> {
     const { error } = await this.sb
@@ -146,7 +142,7 @@ export class ClubeService {
     await this.carregarSugestoes();
   }
 
-  // Os campos de um livro que vão para o banco (só o que existe, já limpo)
+  
   private camposDoLivro(l: ResultadoBusca) {
     return {
       titulo: l.titulo.slice(0, 200),
@@ -159,7 +155,7 @@ export class ClubeService {
     };
   }
 
-  // ----- ao vivo -----
+ 
 
   escutar() {
     if (this.canal) return;

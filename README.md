@@ -7,8 +7,6 @@
 
 Aplicativo para o meu clube do livro, que antes funcionava só num grupo de WhatsApp. Cada pessoa tem sua conta e sua boneca, e o app organiza o livro do mês, as sugestões e a roleta de sorteio, os encontros, as resenhas e os desafios de leitura.
 
-> Projeto em desenvolvimento, feito como projeto avaliativo do curso de Ciência da Computação.
-
 ## Funcionalidades
 
 - Cadastro e login (nome, e-mail, data de aniversário e escolha de uma entre 36 bonecas ilustradas)
@@ -61,45 +59,8 @@ A Open Library tem a maior parte do acervo em inglês, por isso o Google Livros 
 Você vai precisar de [Node.js](https://nodejs.org/) e de uma conta gratuita no [Supabase](https://supabase.com/).
 
 ```bash
-# 1. instalar o Ionic e as dependências
+#instalar o Ionic e as dependências
 npm install -g @ionic/cli
 npm install
 
-# 2. configurar as chaves
-#    copie src/environments/environment.example.ts para
-#    src/environments/environment.ts e environment.prod.ts
-#    e preencha com a URL e a chave pública do seu projeto no Supabase
 
-# 3. rodar
-ionic serve
-```
-
-**Banco de dados:** no Supabase, abra *SQL Editor* e rode, nesta ordem, os arquivos da pasta [`supabase/`](supabase):
-
-1. `01_base.sql` — perfis e gatilho de cadastro
-2. `02_avatares.sql` — escolha da boneca
-3. `03_bloco2.sql` — livros, roleta, encontros, resenhas e segurança
-4. `04_uma_sugestao_por_pessoa.sql` — limite de 1 sugestão por pessoa (opcional se o 03 já foi rodado na versão nova)
-5. `05_bloco3.sql` — dados extras dos livros, livros lidos, curtidas e sorteio atualizado
-6. `06_bloco4_desafios.sql` — desafios, convites, corrida, chat, troféus e segurança
-7. `07_ajustes_e_notificacoes.sql` — ferramentas de limpeza e notificações
-
-Depois, em *Authentication*, desligue "Confirm email" para testar, crie sua conta no app e torne-a administradora (instruções no final do `03_bloco2.sql`).
-
-## Estrutura
-
-```
-src/app/
-  core/      serviços (login, clube, desafios, APIs de livros, livros lidos), modelos e "porteiros" de rota
-  shared/    componentes reutilizáveis (avatar, roleta, calendário, busca e ficha de livro...)
-  pages/     telas (login, início, resenhas, desafios, encontros, perfil)
-supabase/    scripts SQL do banco
-```
-
-## Capturas de tela
-
-_(adicione aqui prints do app: login, início com a roleta, calendário, resenhas e desafios)_
-
-## Autoria
-
-Desenvolvido por _(seu nome e links aqui)_.

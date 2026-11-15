@@ -26,7 +26,6 @@ interface DocOpenLibrary {
   number_of_pages_median?: number;
 }
 
-// Um livro com os dados extras que usamos só para escolher e ordenar
 interface Candidato extends ResultadoBusca {
   idioma: string;
   avaliacoes: number;
@@ -36,9 +35,9 @@ interface Candidato extends ResultadoBusca {
 export interface Categoria {
   id: string;
   nome: string;
-  consulta: string; // o que perguntamos ao Google Livros
+  consulta: string; 
   ordem: 'relevance' | 'newest';
-  anosRecentes?: number; // se informado, dá preferência a livros dos últimos X anos
+  anosRecentes?: number; 
 }
 
 export const CATEGORIAS: Categoria[] = [
@@ -53,7 +52,6 @@ export const CATEGORIAS: Categoria[] = [
   { id: 'scifi', nome: 'Ficção científica', consulta: '"ficção científica"', ordem: 'relevance' },
 ];
 
-// Categoria especial: livros em alta no mundo, direto da Open Library (os títulos vêm no idioma original)
 export const CATEGORIA_MUNDO = { id: 'mundo', nome: '🌎 Mundo (Open Library)' };
 
 export interface DetalhesExtras {
@@ -95,7 +93,6 @@ export interface PaginaBiblioteca {
 export class LivrosApiService {
   private readonly memoria = new Map<string, ResultadoBusca[]>();
 
-  // ----- procurar um livro (português primeiro, Open Library completando) -----
   async buscar(texto: string): Promise<ResultadoBusca[]> {
     const q = texto.trim();
     if (q.length < 2) return [];
@@ -116,7 +113,6 @@ export class LivrosApiService {
       const k = this.chave(o.titulo);
       const ja = mapa.get(k);
       if (ja) {
-        // o mesmo livro: a Open Library completa o que faltar e dá o código dela
         ja.capa_url ??= o.capa_url;
         ja.chave_ol ??= o.chave_ol;
         ja.ano ??= o.ano;
@@ -184,8 +180,7 @@ export class LivrosApiService {
       falhas.add('Open Library');
     }
 
-    // A popularidade vem do catálogo de tendências. O Google complementa
-    // os dados das obras encontradas, sem inserir títulos fora desse ranking.
+    
     if (emAlta) {
       const edicoes = await Promise.allSettled(livrosAbertos.slice(0, 3).map(async livro => {
         const titulo = livro.titulo.replace(/"/g, '');
@@ -254,7 +249,7 @@ export class LivrosApiService {
     return [...livros.values()];
   }
 
-  // ----- livros em alta no mundo (Open Library, títulos originais) -----
+  
   async emAltaNoMundo(): Promise<ResultadoBusca[]> {
     return this.comMemoria('mundo', async () => {
       const json = (await this.pegar(`${OPEN_LIBRARY}/trending/daily.json?limit=18`)) as { works?: DocOpenLibrary[] };
@@ -262,8 +257,7 @@ export class LivrosApiService {
     });
   }
 
-  // ----- descrição, páginas e ano de um livro específico -----
-  // Tenta o Google Livros (em português); se não achar descrição, usa a da Open Library (geralmente em inglês).
+ 
   async detalhes(l: ResultadoBusca): Promise<DetalhesExtras> {
     const extras: DetalhesExtras = { descricao: l.descricao ?? null, paginas: l.paginas ?? null, ano: l.ano ?? null };
 
@@ -280,7 +274,7 @@ export class LivrosApiService {
           extras.ano ??= parecido.ano ?? null;
         }
       } catch {
-        // sem o Google, seguimos para a Open Library
+       
       }
     }
 
@@ -303,13 +297,13 @@ export class LivrosApiService {
           }
         }
       } catch {
-        // tudo bem: mostramos só o que temos
+        
       }
     }
     return extras;
   }
 
-  // Procura o código do livro na Open Library pelo título e autor
+  
   private async acharNaOpenLibrary(l: ResultadoBusca): Promise<string | null> {
     const autor = (l.autor ?? '').split(',')[0].trim();
     const url =
@@ -325,7 +319,7 @@ export class LivrosApiService {
     return this.limparTexto(inicio.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'));
   }
 
-  // ----- tradução (inglês para português) com o serviço gratuito MyMemory -----
+ 
   async traduzir(texto: string): Promise<string> {
     const partes = this.dividir(texto, 440);
     const saida: string[] = [];
@@ -339,7 +333,7 @@ export class LivrosApiService {
     return saida.join(' ').trim();
   }
 
-  // Quebra o texto em pedaços pequenos, sempre no fim de uma frase
+  
   private dividir(texto: string, limite: number): string[] {
     const frases = texto.match(/[^.!?]+[.!?]*\s*/g) ?? [texto];
     const partes: string[] = [];
@@ -411,7 +405,7 @@ export class LivrosApiService {
     };
   }
 
-  // ---------- ajudantes ----------
+ 
 
   private async pegar(url: string): Promise<unknown> {
     const controle = new AbortController();
@@ -437,7 +431,7 @@ export class LivrosApiService {
     return typeof valor === 'number' && Number.isFinite(valor) && valor >= minimo && valor <= maximo ? Math.round(valor) : null;
   }
 
-  // Tira etiquetas HTML e caracteres estranhos das descrições
+  
   private limparTexto(texto: string | undefined): string | null {
     if (!texto) return null;
     const limpo = texto
@@ -455,7 +449,7 @@ export class LivrosApiService {
     return limpo.length > 700 ? limpo.slice(0, 697).trimEnd() + '…' : limpo;
   }
 
-  // Título "limpo" para comparar (sem acento, maiúscula ou pontuação)
+  
   private chave(titulo: string): string {
     return titulo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   }
