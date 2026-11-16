@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "Court of Books",
+  "short_name": "Court of Books",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "pt-BR",
+  "background_color": "#FFF7F8",
+  "theme_color": "#F7B4C0",
+  "icons": [
+    {
+      "src": "assets/icon/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
