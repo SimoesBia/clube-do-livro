@@ -12,7 +12,7 @@ import { AvatarMembroComponent } from '../avatar/avatar-membro.component';
   template: `
     <ion-header class="ion-no-border">
       <ion-toolbar>
-        <ion-title>
+        <ion-title [style.font-size.px]="titulo() === 'Court of Books' ? 18 : null">
           {{ titulo() }}
           @if (enfeite()) {
             <span class="enfeite" aria-hidden="true">{{ enfeite() }}</span>

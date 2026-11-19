@@ -1,51 +1,68 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { IonButton, IonContent, IonSpinner } from '@ionic/angular';
+import { Component, inject, signal, viewChild } from '@angular/core';
+import { IonButton, IonContent, IonInfiniteScroll, IonInfiniteScrollContent, IonSpinner } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
-import { Comentario, Livro, Resenha } from '../../core/modelos';
+import { Comentario, Livro, Resenha, ResultadoBusca } from '../../core/modelos';
 import { SupabaseService } from '../../core/supabase.service';
 import { AvatarMembroComponent } from '../../shared/avatar/avatar-membro.component';
+import { BuscaLivroComponent } from '../../shared/busca-livro/busca-livro.component';
 import { TopoComponent } from '../../shared/topo/topo.component';
 
 // "!autor_id" diz ao Supabase qual ligação usar (a tabela de comentários e a de curtidas também ligam resenhas a perfis)
+type Origem = 'clube' | 'pessoal';
+type ResenhaFeed = Resenha & { tipo: Origem; total_curtidas: number; eu_curti: boolean; total_comentarios: number };
+
 const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias)';
 
 @Component({
   selector: 'app-resenhas',
-  imports: [IonContent, IonButton, IonSpinner, TopoComponent, AvatarMembroComponent],
+  imports: [IonContent, IonButton, IonSpinner, TopoComponent, AvatarMembroComponent, BuscaLivroComponent, IonInfiniteScroll, IonInfiniteScrollContent],
   template: `
     <app-topo titulo="Resenhas" enfeite="📚"></app-topo>
     <ion-content [fullscreen]="true">
       <section class="intro">
-        <h1 class="titulo-serif">O que você achou?</h1>
-        <p class="suave">Conte como foi a leitura, dê sua nota e leia o que as outras pessoas acharam. Críticas com carinho! 💌</p>
+        <h1 class="titulo-serif">Leituras do clube</h1>
+        <p class="suave">As resenhas do clube e as leituras pessoais de todas nós, das mais recentes às antigas. 💌</p>
         <ion-button (click)="alternarFormulario()">
-          {{ formAberto() ? 'Fechar a ficha' : 'Escrever minha resenha ✍️' }}
+          {{ formAberto() ? 'Fechar a ficha' : 'Escrever resenha ✍️' }}
         </ion-button>
+        <button type="button" class="pilula" [disabled]="carregando()" (click)="atualizar()">Atualizar feed</button>
       </section>
 
       @if (formAberto()) {
         <section class="ficha">
           <h2 class="titulo-serif">Ficha de leitura</h2>
 
-          @if (livros().length === 0) {
+          <div class="tipos" aria-label="Tipo de resenha">
+            <button type="button" class="pilula" [class.ativa]="origem() === 'clube'" [disabled]="salvando()" (click)="trocarOrigem('clube')">Livro do clube</button>
+            <button type="button" class="pilula" [class.ativa]="origem() === 'pessoal'" [disabled]="salvando()" (click)="trocarOrigem('pessoal')">Leitura pessoal</button>
+          </div>
+          @if (origem() === 'pessoal') {
+            @if (editandoId()) { <p>Editando: {{ tituloEdicao() }}</p> }
+            @else { <app-busca-livro [(escolhido)]="livroPessoal" placeholder="Busque o livro da sua resenha"></app-busca-livro> }
+          }
+          @if (origem() === 'clube' && livros().length === 0) {
             <p class="suave">
               Ainda não tem nenhum livro cadastrado. Assim que o livro do mês for definido (na aba Início), ele aparece aqui para você resenhar.
             </p>
           } @else {
+            @if (origem() === 'clube') {
             <label class="rotulo-campo" for="livro">Qual livro?</label>
-            <select id="livro" class="campo" [value]="livroId()" (change)="escolherLivro($event)">
+            <select id="livro" [disabled]="salvando()" class="campo" [value]="livroId()" (change)="escolherLivro($event)">
               <option value="">Escolha um livro…</option>
               @for (l of livros(); track l.id) {
                 <option [value]="l.id" [selected]="l.id === livroId()">{{ l.titulo }}{{ l.autor ? ' — ' + l.autor : '' }}</option>
               }
             </select>
+            }
 
+            @if (preenchendo()) { <p role="status">Abrindo sua ficha…</p> }
             <span class="rotulo-campo">Sua nota</span>
             <div class="estrelas" role="radiogroup" aria-label="Sua nota de 1 a 5">
               @for (n of [1, 2, 3, 4, 5]; track n) {
                 <button
                   type="button"
                   class="estrela"
+                  [disabled]="preenchendo() || salvando()"
                   [class.cheia]="n <= nota()"
                   role="radio"
                   [attr.aria-checked]="n === nota()"
@@ -55,12 +72,15 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
               }
             </div>
 
+            @if (origem() === 'clube') {
             <label class="rotulo-campo" for="dias">Em quantos dias você leu?</label>
-            <input id="dias" class="campo" type="number" inputmode="numeric" min="0" max="3650" placeholder="Ex.: 12" [value]="dias()" (input)="dias.set($any($event.target).value)" />
+            <input id="dias" [disabled]="preenchendo() || salvando()" class="campo" type="number" inputmode="numeric" min="0" max="3650" placeholder="Ex.: 12" [value]="dias()" (input)="dias.set($any($event.target).value)" />
+            }
 
             <label class="rotulo-campo" for="texto">O que você achou?</label>
             <textarea
               id="texto"
+              [disabled]="preenchendo() || salvando()"
               class="campo"
               maxlength="5000"
               placeholder="Conta tudo: personagens, final, o que te fez chorar, o que te irritou…"
@@ -69,7 +89,7 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
             ></textarea>
 
             <div class="linha-spoiler">
-              <button type="button" class="pilula" [class.ativa]="spoiler()" (click)="spoiler.set(!spoiler())">
+              <button type="button" class="pilula" [class.ativa]="spoiler()" [disabled]="preenchendo() || salvando()" (click)="spoiler.set(!spoiler())">
                 {{ spoiler() ? '✓ Tem spoiler' : 'Tem spoiler?' }}
               </button>
               <span class="contador">{{ texto().length }}/5000</span>
@@ -82,31 +102,34 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
               <p class="aviso" role="status">{{ mensagem() }}</p>
             }
 
-            <ion-button expand="block" [disabled]="salvando()" (click)="salvar()">
+            <ion-button expand="block" [disabled]="salvando() || preenchendo()" (click)="salvar()">
               @if (salvando()) {
                 <ion-spinner name="dots"></ion-spinner>
               } @else {
-                {{ jaTenhoResenha() ? 'Atualizar minha resenha' : 'Publicar resenha' }}
+                {{ editandoId() ? 'Atualizar minha resenha' : 'Publicar resenha' }}
               }
             </ion-button>
           }
         </section>
       }
 
-      @if (carregando()) {
+      @if (carregando() && resenhas().length === 0) {
         <div class="centro"><ion-spinner name="dots"></ion-spinner></div>
       }
       @if (erroDaLista()) {
-        <p class="erro lista-erro" role="alert">{{ erroDaLista() }}</p>
+        <div class="lista-erro"><p class="erro" role="alert">{{ erroDaLista() }}</p>
+          <button type="button" class="pilula" [disabled]="carregando()" (click)="carregarMais()">Tentar novamente</button>
+        </div>
       }
 
-      @for (r of resenhas(); track r.id) {
+      @for (r of resenhas(); track chave(r)) {
         <article class="secao resenha">
           <header>
             <app-avatar-membro [membro]="r.quem" [tamanho]="46"></app-avatar-membro>
             <div class="quem">
               <strong>{{ r.quem?.nome ?? 'Alguém do clube' }}</strong>
               <span>{{ data(r.criado_em) }}</span>
+              <span class="origem-resenha">{{ r.tipo === 'clube' ? '📚 Livro do clube' : '📖 Leitura pessoal' }}</span>
             </div>
           </header>
 
@@ -121,7 +144,7 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
             <div class="titulo">
               <strong>{{ r.livro?.titulo }}</strong>
               @if (r.livro?.autor) {
-                <span>{{ r.livro?.autor }}</span>
+                <span>{{ r.livro.autor }}</span>
               }
             </div>
           </div>
@@ -135,28 +158,29 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
             }
           </div>
 
-          @if (r.spoiler && !spoilerVisto()[r.id] && r.autor_id !== auth.perfil()?.id) {
-            <button type="button" class="aviso-spoiler" (click)="mostrarSpoiler(r.id)">⚠️ Esta resenha tem spoiler. Toque para ler.</button>
+          @if (r.spoiler && !spoilerVisto()[chave(r)] && r.autor_id !== auth.perfil()?.id) {
+            <button type="button" class="aviso-spoiler" (click)="mostrarSpoiler(chave(r))">⚠️ Esta resenha tem spoiler. Toque para ler.</button>
           } @else {
             <p class="texto">{{ r.texto }}</p>
           }
 
           <footer>
-            <button type="button" class="pilula curtir" [class.ativa]="euCurti(r.id)" (click)="curtir(r.id)" [attr.aria-pressed]="euCurti(r.id)">
-              {{ euCurti(r.id) ? '♥' : '♡' }} {{ totalDeCurtidas(r.id) }}
+            <button type="button" class="pilula curtir" [disabled]="ocupadas()[chave(r)]" [class.ativa]="euCurti(chave(r))" (click)="curtir(chave(r))" [attr.aria-pressed]="euCurti(chave(r))">
+              {{ euCurti(chave(r)) ? '♥' : '♡' }} {{ totalDeCurtidas(chave(r)) }}
             </button>
-            <button type="button" class="pilula" (click)="alternarComentarios(r.id)">
-              💬 {{ abertas()[r.id] ? 'Esconder comentários' : 'Comentários' }}
+            <button type="button" class="pilula" (click)="alternarComentarios(chave(r))">
+              💬 {{ abertas()[chave(r)] ? 'Esconder comentários' : 'Comentários (' + r.total_comentarios + ')' }}
             </button>
             @if (r.autor_id === auth.perfil()?.id) {
-              <button type="button" class="pilula" (click)="editar(r)">Editar</button>
-              <button type="button" class="pilula apagar" (click)="apagar(r.id)">Apagar</button>
+              <button type="button" class="pilula" [disabled]="salvando()" (click)="editar(r)">Editar</button>
+              <button type="button" class="pilula apagar" [disabled]="ocupadas()[chave(r)]" (click)="apagar(chave(r))">Apagar</button>
             }
           </footer>
 
-          @if (abertas()[r.id]) {
+          @if (errosInteracao()[chave(r)]) { <p class="erro" role="alert">{{ errosInteracao()[chave(r)] }}</p> }
+          @if (abertas()[chave(r)]) {
             <div class="comentarios">
-              @for (c of comentarios()[r.id] ?? []; track c.id) {
+              @for (c of comentarios()[chave(r)] ?? []; track c.id) {
                 <div class="comentario">
                   <app-avatar-membro [membro]="c.quem" [tamanho]="30"></app-avatar-membro>
                   <div class="corpo">
@@ -164,11 +188,15 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
                     <p>{{ c.texto }}</p>
                   </div>
                   @if (c.autor_id === auth.perfil()?.id || auth.eAdmin()) {
-                    <button type="button" class="x" (click)="apagarComentario(r.id, c.id)" aria-label="Apagar comentário">✕</button>
+                    <button type="button" class="x" [disabled]="comentando()[chave(r)] || carregandoComentarios()[chave(r)]" (click)="apagarComentario(chave(r), c.id)" aria-label="Apagar comentário">✕</button>
                   }
                 </div>
               } @empty {
-                <p class="suave">Ninguém comentou ainda. Comece a conversa!</p>
+                @if (!carregandoComentarios()[chave(r)]) { <p class="suave">Ninguém comentou ainda. Comece a conversa!</p> }
+              }
+              @if (carregandoComentarios()[chave(r)]) { <p role="status">Carregando comentários…</p> }
+              @if (maisComentarios()[chave(r)]) {
+                <button type="button" class="pilula" [disabled]="carregandoComentarios()[chave(r)]" (click)="carregarComentarios(chave(r), true)">Comentários anteriores</button>
               }
               <div class="novo">
                 <input
@@ -176,22 +204,31 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
                   type="text"
                   maxlength="1000"
                   placeholder="Escreva um comentário…"
-                  [value]="rascunhos()[r.id] ?? ''"
-                  (input)="digitarComentario(r.id, $event)"
-                  (keyup.enter)="comentar(r.id)"
+                  [value]="rascunhos()[chave(r)] ?? ''"
+                  (input)="digitarComentario(chave(r), $event)"
+                  (keyup.enter)="comentar(chave(r))"
                 />
-                <ion-button size="small" (click)="comentar(r.id)">Enviar</ion-button>
+                <ion-button size="small" [disabled]="comentando()[chave(r)] || carregandoComentarios()[chave(r)]" (click)="comentar(chave(r))">Enviar</ion-button>
               </div>
             </div>
           }
         </article>
       } @empty {
-        @if (!carregando()) {
+        @if (!carregando() && !erroDaLista()) {
           <section class="secao vazio">
             <p class="suave">Nenhuma resenha ainda. Que tal ser a primeira? 📚</p>
           </section>
         }
       }
+      @if (resenhas().length > 0 && !temMais()) {
+        <p class="fim-feed suave" role="status">Você chegou ao fim das resenhas. Toque em Atualizar feed para buscar novas publicações.</p>
+      }
+      @if (temMais() && !erroDaLista()) {
+        <div class="fim-feed"><button type="button" class="pilula" [disabled]="carregando()" (click)="carregarMais()">Carregar mais resenhas</button></div>
+      }
+      <ion-infinite-scroll threshold="180px" [disabled]="!temMais() || !!erroDaLista()" (ionInfinite)="rolarMais($event)">
+        <ion-infinite-scroll-content loadingSpinner="dots" loadingText="Carregando mais resenhas…"></ion-infinite-scroll-content>
+      </ion-infinite-scroll>
     </ion-content>
   `,
   styles: [
@@ -381,6 +418,9 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
       .vazio {
         text-align: center;
       }
+      .origem-resenha { font-size: .78rem; color: var(--cob-vinho); }
+      .tipos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+      .fim-feed { text-align: center; padding: 18px; }
       .lista-erro {
         margin: 12px 14px;
       }
@@ -390,15 +430,19 @@ const AUTOR = 'quem:perfis!autor_id(id, nome, avatar_id, participacoes, vitorias
 export class ResenhasPage {
   protected readonly auth = inject(AuthService);
   private readonly sb = inject(SupabaseService).cliente;
-
+  private readonly conteudo = viewChild(IonContent);
   protected readonly livros = signal<Livro[]>([]);
-  protected readonly resenhas = signal<Resenha[]>([]);
-  protected readonly carregando = signal(true);
+  protected readonly resenhas = signal<ResenhaFeed[]>([]);
+  protected readonly carregando = signal(false);
+  protected readonly temMais = signal(true);
   protected readonly erroDaLista = signal('');
-
-  // ficha de leitura
   protected readonly formAberto = signal(false);
+  protected readonly origem = signal<Origem>('clube');
+  protected readonly livroPessoal = signal<ResultadoBusca | null>(null);
   protected readonly livroId = signal('');
+  protected readonly editandoId = signal<string | null>(null);
+  protected readonly tituloEdicao = signal('');
+  protected readonly preenchendo = signal(false);
   protected readonly nota = signal(0);
   protected readonly dias = signal('');
   protected readonly texto = signal('');
@@ -406,175 +450,247 @@ export class ResenhasPage {
   protected readonly salvando = signal(false);
   protected readonly erro = signal('');
   protected readonly mensagem = signal('');
-
-  // comentários
   protected readonly abertas = signal<Record<string, boolean>>({});
   protected readonly comentarios = signal<Record<string, Comentario[]>>({});
   protected readonly rascunhos = signal<Record<string, string>>({});
   protected readonly spoilerVisto = signal<Record<string, boolean>>({});
-
-  // curtidas
-  protected readonly curtidas = signal<{ resenha_id: string; perfil_id: string }[]>([]);
-
-  protected readonly jaTenhoResenha = computed(() =>
-    this.resenhas().some((r) => r.livro_id === this.livroId() && r.autor_id === this.auth.perfil()?.id),
-  );
+  protected readonly ocupadas = signal<Record<string, boolean>>({});
+  protected readonly comentando = signal<Record<string, boolean>>({});
+  protected readonly carregandoComentarios = signal<Record<string, boolean>>({});
+  protected readonly maisComentarios = signal<Record<string, boolean>>({});
+  protected readonly errosInteracao = signal<Record<string, string>>({});
+  private cursor: { criado_em: string; id: string; tipo: Origem } | null = null;
+  private versao = 0;
+  private versaoFicha = 0;
 
   async ionViewWillEnter() {
-    await this.carregar();
+    await Promise.all([this.carregarLivros(), this.atualizar()]);
+  }
+  ionViewWillLeave() { ++this.versao; ++this.versaoFicha; this.carregando.set(false); }
+
+  private async carregarLivros() {
+    const { data, error } = await this.sb.from('livros')
+      .select('id, titulo, autor, capa_url, criado_em').order('criado_em', { ascending: false });
+    if (!error) this.livros.set((data ?? []) as Livro[]);
   }
 
-  private async carregar() {
-    const [livros, resenhas] = await Promise.all([
-      this.sb.from('livros').select('id, titulo, autor, capa_url, criado_em').order('criado_em', { ascending: false }),
-      this.sb
-        .from('resenhas')
-        .select(`id, livro_id, autor_id, nota, dias_leitura, texto, spoiler, criado_em, livro:livros!livro_id(id, titulo, autor, capa_url), ${AUTOR}`)
-        .order('criado_em', { ascending: false }),
-    ]);
-    const curtidas = await this.sb.from('curtidas_resenha').select('resenha_id, perfil_id');
-    this.curtidas.set((curtidas.data ?? []) as { resenha_id: string; perfil_id: string }[]);
-    this.livros.set((livros.data ?? []) as Livro[]);
-    this.erroDaLista.set(resenhas.error ? 'Não consegui carregar as resenhas agora. Tente de novo em instantes.' : '');
-    this.resenhas.set((resenhas.data ?? []) as unknown as Resenha[]);
+  protected async atualizar() {
+    ++this.versao;
+    this.cursor = null;
+    this.resenhas.set([]);
+    this.abertas.set({});
+    this.comentarios.set({});
+    this.maisComentarios.set({});
+    this.carregandoComentarios.set({});
+    this.errosInteracao.set({});
+    this.spoilerVisto.set({});
+    this.temMais.set(true);
     this.carregando.set(false);
+    await this.carregarMais();
   }
 
-  protected data(iso: string): string {
-    return new Date(iso).toLocaleDateString('pt-BR');
-  }
-
-  // ----- ficha de leitura -----
-
-  protected alternarFormulario() {
-    this.formAberto.set(!this.formAberto());
-    this.erro.set('');
-    this.mensagem.set('');
-  }
-
-  protected escolherLivro(evento: Event) {
-    this.preencherPara((evento.target as HTMLSelectElement).value);
-  }
-
-  // Se a pessoa já escreveu uma resenha desse livro, a ficha abre com ela preenchida
-  private preencherPara(id: string) {
-    this.livroId.set(id);
-    const minha = this.resenhas().find((r) => r.livro_id === id && r.autor_id === this.auth.perfil()?.id);
-    this.nota.set(minha?.nota ?? 0);
-    this.dias.set(minha?.dias_leitura !== null && minha?.dias_leitura !== undefined ? String(minha.dias_leitura) : '');
-    this.texto.set(minha?.texto ?? '');
-    this.spoiler.set(minha?.spoiler ?? false);
-  }
-
-  protected editar(r: Resenha) {
-    this.formAberto.set(true);
-    this.preencherPara(r.livro_id);
-    this.erro.set('');
-    this.mensagem.set('');
-  }
-
-  protected async salvar() {
-    const meuId = this.auth.perfil()?.id;
-    this.erro.set('');
-    this.mensagem.set('');
-    if (!meuId) return;
-    if (!this.livroId()) return this.erro.set('Escolha o livro.');
-    if (this.nota() < 1) return this.erro.set('Dê uma nota de 1 a 5 estrelas.');
-    if (!this.texto().trim()) return this.erro.set('Conte o que você achou do livro.');
-
-    const diasTexto = this.dias().trim();
-    const dias = diasTexto === '' ? null : Math.min(3650, Math.max(0, Math.round(Number(diasTexto))));
-    if (dias !== null && Number.isNaN(dias)) return this.erro.set('Escreva os dias só com números.');
-
-    this.salvando.set(true);
-    const { error } = await this.sb.from('resenhas').upsert(
-      {
-        livro_id: this.livroId(),
-        autor_id: meuId,
-        nota: this.nota(),
-        dias_leitura: dias,
-        texto: this.texto().trim(),
-        spoiler: this.spoiler(),
-      },
-      { onConflict: 'livro_id,autor_id' },
-    );
-    this.salvando.set(false);
-    if (error) return this.erro.set('Não deu para salvar a resenha agora. Tente de novo.');
-
-    this.mensagem.set('Resenha publicada! 🎉');
-    await this.carregar();
-  }
-
-  protected async apagar(id: string) {
-    if (!confirm('Apagar sua resenha?')) return;
-    await this.sb.from('resenhas').delete().eq('id', id);
-    await this.carregar();
-  }
-
-  protected mostrarSpoiler(id: string) {
-    this.spoilerVisto.update((v) => ({ ...v, [id]: true }));
-  }
-
-  // ----- curtidas -----
-
-  protected totalDeCurtidas(id: string): number {
-    return this.curtidas().filter((c) => c.resenha_id === id).length;
-  }
-
-  protected euCurti(id: string): boolean {
-    const meuId = this.auth.perfil()?.id;
-    return !!meuId && this.curtidas().some((c) => c.resenha_id === id && c.perfil_id === meuId);
-  }
-
-  protected async curtir(id: string) {
-    const meuId = this.auth.perfil()?.id;
-    if (!meuId) return;
-    const antes = this.curtidas();
-    if (this.euCurti(id)) {
-      this.curtidas.set(antes.filter((c) => !(c.resenha_id === id && c.perfil_id === meuId)));
-      const { error } = await this.sb.from('curtidas_resenha').delete().eq('resenha_id', id).eq('perfil_id', meuId);
-      if (error) this.curtidas.set(antes);
-    } else {
-      this.curtidas.set([...antes, { resenha_id: id, perfil_id: meuId }]);
-      const { error } = await this.sb.from('curtidas_resenha').insert({ resenha_id: id, perfil_id: meuId });
-      if (error) this.curtidas.set(antes);
+  protected async carregarMais() {
+    if (this.carregando() || !this.temMais()) return;
+    const versao = this.versao;
+    this.carregando.set(true);
+    this.erroDaLista.set('');
+    try {
+      const { data, error } = await this.sb.rpc('feed_resenhas', {
+        p_antes_data: this.cursor?.criado_em ?? null,
+        p_antes_id: this.cursor?.id ?? null,
+        p_antes_tipo: this.cursor?.tipo ?? null,
+        p_limite: 21,
+      });
+      if (versao !== this.versao) return;
+      if (error) throw error;
+      const recebidas = (data ?? []) as ResenhaFeed[];
+      const pagina = recebidas.slice(0, 20);
+      const vistas = new Set(this.resenhas().map(r => this.chave(r)));
+      this.resenhas.update(atuais => [...atuais, ...pagina.filter(r => !vistas.has(this.chave(r)))]);
+      if (pagina.length) this.cursor = pagina[pagina.length - 1];
+      this.temMais.set(recebidas.length > 20);
+    } catch {
+      if (versao === this.versao) this.erroDaLista.set('Não consegui carregar o feed agora. Suas resenhas continuam salvas. Tente novamente.');
+    } finally {
+      if (versao === this.versao) this.carregando.set(false);
     }
   }
-
-  // ----- comentários -----
-
-  protected async alternarComentarios(id: string) {
-    const abrir = !this.abertas()[id];
-    this.abertas.update((a) => ({ ...a, [id]: abrir }));
-    if (abrir) await this.carregarComentarios(id);
+  protected async rolarMais(evento: Event) {
+    try { await this.carregarMais(); }
+    finally { await (evento.target as HTMLIonInfiniteScrollElement).complete(); }
   }
 
-  private async carregarComentarios(id: string) {
-    const { data } = await this.sb
-      .from('comentarios')
-      .select(`id, resenha_id, autor_id, texto, criado_em, ${AUTOR}`)
-      .eq('resenha_id', id)
-      .order('criado_em', { ascending: true });
-    this.comentarios.update((c) => ({ ...c, [id]: (data ?? []) as unknown as Comentario[] }));
+  protected chave(r: ResenhaFeed) { return `${r.tipo}:${r.id}`; }
+  private item(chave: string) { return this.resenhas().find(r => this.chave(r) === chave); }
+  private tabela(r: ResenhaFeed, recurso: 'resenha' | 'curtida' | 'comentario') {
+    if (recurso === 'resenha') return r.tipo === 'clube' ? 'resenhas' : 'resenhas_pessoais';
+    if (recurso === 'curtida') return r.tipo === 'clube' ? 'curtidas_resenha' : 'curtidas_resenha_pessoal';
+    return r.tipo === 'clube' ? 'comentarios' : 'comentarios_resenha_pessoal';
   }
+  private falha(chave: string, texto = '') { this.errosInteracao.update(e => ({ ...e, [chave]: texto })); }
+  protected data(iso: string) { return new Date(iso).toLocaleDateString('pt-BR'); }
 
-  protected digitarComentario(id: string, evento: Event) {
-    const valor = (evento.target as HTMLInputElement).value;
-    this.rascunhos.update((r) => ({ ...r, [id]: valor }));
+  protected alternarFormulario() {
+    this.formAberto.set(!this.formAberto()); this.erro.set(''); this.mensagem.set('');
   }
-
-  protected async comentar(id: string) {
+  protected trocarOrigem(origem: Origem) {
+    if (this.salvando() || origem === this.origem()) return;
+    ++this.versaoFicha;
+    this.origem.set(origem); this.livroId.set(''); this.editandoId.set(null);
+    this.livroPessoal.set(null); this.tituloEdicao.set(''); this.preenchendo.set(false);
+    this.nota.set(0); this.dias.set(''); this.texto.set(''); this.spoiler.set(false);
+    this.erro.set(''); this.mensagem.set('');
+  }
+  protected async escolherLivro(evento: Event) {
+    await this.preencherPara((evento.target as HTMLSelectElement).value);
+  }
+  private async preencherPara(id: string) {
+    const versao = ++this.versaoFicha;
+    this.livroId.set(id); this.editandoId.set(null); this.nota.set(0); this.texto.set('');
+    this.dias.set(''); this.spoiler.set(false); this.erro.set('');
+    if (!id) { this.preenchendo.set(false); return; }
+    this.preenchendo.set(true);
+    try {
+      const { data, error } = await this.sb.from('resenhas')
+        .select('id, nota, dias_leitura, texto, spoiler').eq('livro_id', id)
+        .eq('autor_id', this.auth.perfil()!.id).maybeSingle();
+      if (versao !== this.versaoFicha) return;
+      if (error) { this.erro.set('Não consegui abrir sua ficha. Selecione o livro novamente.'); return; }
+      if (data) {
+        this.editandoId.set(data.id); this.nota.set(data.nota); this.texto.set(data.texto);
+        this.dias.set(data.dias_leitura == null ? '' : String(data.dias_leitura)); this.spoiler.set(data.spoiler);
+      }
+    } finally { if (versao === this.versaoFicha) this.preenchendo.set(false); }
+  }
+  protected editar(r: ResenhaFeed) {
+    if (this.salvando()) return;
+    ++this.versaoFicha;
+    this.origem.set(r.tipo); this.formAberto.set(true); this.preenchendo.set(false);
+    this.editandoId.set(r.id); this.livroId.set(r.livro_id ?? ''); this.tituloEdicao.set(r.livro?.titulo ?? '');
+    this.nota.set(r.nota); this.dias.set(r.dias_leitura == null ? '' : String(r.dias_leitura));
+    this.texto.set(r.texto); this.spoiler.set(r.spoiler); this.erro.set(''); this.mensagem.set('');
+    // O formulário fica no topo, inclusive quando a resenha veio de uma página antiga.
+    void this.conteudo()?.scrollToTop(250);
+  }
+  protected async salvar() {
     const meuId = this.auth.perfil()?.id;
-    const texto = (this.rascunhos()[id] ?? '').trim();
-    if (!meuId || !texto) return;
-    const { error } = await this.sb.from('comentarios').insert({ resenha_id: id, autor_id: meuId, texto });
-    if (error) return;
-    this.rascunhos.update((r) => ({ ...r, [id]: '' }));
-    await this.carregarComentarios(id);
+    if (!meuId || this.salvando() || this.preenchendo()) return;
+    this.erro.set(''); this.mensagem.set('');
+    const tipo = this.origem(); const id = this.editandoId(); const livro = this.livroPessoal();
+    if (tipo === 'clube' && !this.livroId()) return this.erro.set('Escolha o livro.');
+    if (tipo === 'pessoal' && !id && !livro) return this.erro.set('Busque e selecione o livro.');
+    if (this.nota() < 1 || this.nota() > 5) return this.erro.set('Dê uma nota de 1 a 5 estrelas.');
+    if (!this.texto().trim()) return this.erro.set('Conte o que você achou do livro.');
+    const dias = this.dias().trim() === '' ? null : Math.min(3650, Math.max(0, Math.round(Number(this.dias()))));
+    if (dias !== null && !Number.isFinite(dias)) return this.erro.set('Escreva os dias só com números.');
+    this.salvando.set(true);
+    try {
+      const campos = { nota: this.nota(), texto: this.texto().trim(), spoiler: this.spoiler() };
+      const resultado = tipo === 'clube'
+        ? await this.sb.from('resenhas').upsert({ ...campos, livro_id: this.livroId(), autor_id: meuId, dias_leitura: dias }, { onConflict: 'livro_id,autor_id' })
+        : id
+          ? await this.sb.from('resenhas_pessoais').update(campos).eq('id', id).eq('perfil_id', meuId)
+          : await this.sb.from('resenhas_pessoais').insert({ ...campos, titulo: livro!.titulo, autor: livro!.autor, capa_url: livro!.capa_url });
+      if (resultado.error) {
+        this.erro.set(resultado.error.code === '23505' ? 'Você já resenhou esse livro. Abra sua resenha no perfil para editar.' : 'Não deu para salvar a resenha. Tente novamente.'); return;
+      }
+      this.formAberto.set(false); this.editandoId.set(null); this.livroPessoal.set(null); this.livroId.set('');
+      this.texto.set(''); this.nota.set(0); this.dias.set(''); this.spoiler.set(false);
+      await this.atualizar();
+    } catch { this.erro.set('Não deu para salvar a resenha. Tente novamente.'); }
+    finally { this.salvando.set(false); }
   }
-
-  protected async apagarComentario(resenhaId: string, id: string) {
-    await this.sb.from('comentarios').delete().eq('id', id);
-    await this.carregarComentarios(resenhaId);
+  protected async apagar(chave: string) {
+    const r = this.item(chave);
+    if (!r || this.ocupadas()[chave] || !confirm('Apagar sua resenha?')) return;
+    this.ocupadas.update(o => ({ ...o, [chave]: true })); this.falha(chave);
+    try {
+      const coluna = r.tipo === 'clube' ? 'autor_id' : 'perfil_id';
+      const { error } = await this.sb.from(this.tabela(r, 'resenha')).delete().eq('id', r.id).eq(coluna, this.auth.perfil()!.id);
+      if (error) throw error;
+      this.resenhas.update(rs => rs.filter(item => this.chave(item) !== chave));
+    } catch { this.falha(chave, 'Não consegui apagar a resenha. Tente novamente.'); }
+    finally { this.ocupadas.update(o => ({ ...o, [chave]: false })); }
+  }
+  protected mostrarSpoiler(chave: string) { this.spoilerVisto.update(v => ({ ...v, [chave]: true })); }
+  protected totalDeCurtidas(chave: string) { return this.item(chave)?.total_curtidas ?? 0; }
+  protected euCurti(chave: string) { return this.item(chave)?.eu_curti ?? false; }
+  protected async curtir(chave: string) {
+    const r = this.item(chave); const meuId = this.auth.perfil()?.id;
+    if (!r || !meuId || this.ocupadas()[chave]) return;
+    const versao = this.versao;
+    this.ocupadas.update(o => ({ ...o, [chave]: true })); this.falha(chave);
+    try {
+      const tabela = this.tabela(r, 'curtida');
+      const { error } = r.eu_curti
+        ? await this.sb.from(tabela).delete().eq('resenha_id', r.id).eq('perfil_id', meuId)
+        : await this.sb.from(tabela).insert(r.tipo === 'clube' ? { resenha_id: r.id, perfil_id: meuId } : { resenha_id: r.id });
+      if (error) throw error;
+      if (versao !== this.versao) return;
+      this.resenhas.update(rs => rs.map(item => this.chave(item) === chave
+        ? { ...item, eu_curti: !r.eu_curti, total_curtidas: Math.max(0, item.total_curtidas + (r.eu_curti ? -1 : 1)) } : item));
+    } catch { if (versao === this.versao) this.falha(chave, 'Não consegui salvar sua curtida. Tente novamente.'); }
+    finally { this.ocupadas.update(o => ({ ...o, [chave]: false })); }
+  }
+  protected async alternarComentarios(chave: string) {
+    const abrir = !this.abertas()[chave];
+    this.abertas.update(a => ({ ...a, [chave]: abrir }));
+    if (abrir) await this.carregarComentarios(chave);
+  }
+  protected async carregarComentarios(chave: string, anteriores = false) {
+    const r = this.item(chave);
+    if (!r || this.carregandoComentarios()[chave]) return;
+    const versao = this.versao;
+    this.carregandoComentarios.update(c => ({ ...c, [chave]: true })); this.falha(chave);
+    try {
+      const atuais = anteriores ? this.comentarios()[chave] ?? [] : [];
+      const ultimo = atuais[atuais.length - 1];
+      let consulta = this.sb.from(this.tabela(r, 'comentario'))
+        .select(`id,resenha_id,autor_id,texto,criado_em,${AUTOR}`).eq('resenha_id', r.id)
+        .order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(21);
+      if (ultimo) consulta = consulta.or(`criado_em.lt.${ultimo.criado_em},and(criado_em.eq.${ultimo.criado_em},id.lt.${ultimo.id})`);
+      const { data, error } = await consulta;
+      if (versao !== this.versao) return;
+      if (error) throw error;
+      const lista = (data ?? []) as unknown as Comentario[];
+      this.comentarios.update(c => ({ ...c, [chave]: [...atuais, ...lista.slice(0,20)] }));
+      this.maisComentarios.update(c => ({ ...c, [chave]: lista.length > 20 }));
+    } catch { if (versao === this.versao) this.falha(chave, 'Não consegui carregar os comentários. Feche e abra os comentários para tentar novamente.'); }
+    finally { if (versao === this.versao) this.carregandoComentarios.update(c => ({ ...c, [chave]: false })); }
+  }
+  protected digitarComentario(chave: string, evento: Event) {
+    this.rascunhos.update(r => ({ ...r, [chave]: (evento.target as HTMLInputElement).value }));
+  }
+  protected async comentar(chave: string) {
+    const r = this.item(chave); const meuId = this.auth.perfil()?.id;
+    const texto = (this.rascunhos()[chave] ?? '').trim();
+    if (!r || !meuId || !texto || texto.length > 1000 || this.comentando()[chave] || this.carregandoComentarios()[chave]) return;
+    const versao = this.versao;
+    this.comentando.update(c => ({ ...c, [chave]: true })); this.falha(chave);
+    try {
+      const campos: Record<string, string> = { resenha_id: r.id, texto };
+      if (r.tipo === 'clube') campos['autor_id'] = meuId;
+      const { error } = await this.sb.from(this.tabela(r, 'comentario')).insert(campos);
+      if (versao !== this.versao) return;
+      if (error) throw error;
+      this.rascunhos.update(rascunhos => ({ ...rascunhos, [chave]: '' }));
+      this.resenhas.update(rs => rs.map(item => this.chave(item) === chave ? { ...item, total_comentarios: item.total_comentarios + 1 } : item));
+      await this.carregarComentarios(chave);
+    } catch { if (versao === this.versao) this.falha(chave, 'Não consegui enviar o comentário. Seu texto continua aqui para tentar novamente.'); }
+    finally { this.comentando.update(c => ({ ...c, [chave]: false })); }
+  }
+  protected async apagarComentario(chave: string, id: string) {
+    const r = this.item(chave);
+    if (!r || this.comentando()[chave] || this.carregandoComentarios()[chave]) return;
+    this.comentando.update(c => ({ ...c, [chave]: true })); this.falha(chave);
+    const versao = this.versao;
+    try {
+      const { error } = await this.sb.from(this.tabela(r, 'comentario')).delete().eq('id', id).eq('resenha_id', r.id);
+      if (versao !== this.versao) return;
+      if (error) throw error;
+      this.comentarios.update(c => ({ ...c, [chave]: (c[chave] ?? []).filter(item => item.id !== id) }));
+      this.resenhas.update(rs => rs.map(item => this.chave(item) === chave ? { ...item, total_comentarios: Math.max(0,item.total_comentarios - 1) } : item));
+    } catch { if (versao === this.versao) this.falha(chave, 'Não consegui apagar o comentário. Tente novamente.'); }
+    finally { this.comentando.update(c => ({ ...c, [chave]: false })); }
   }
 }

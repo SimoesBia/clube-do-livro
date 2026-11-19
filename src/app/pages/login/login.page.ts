@@ -1,5 +1,5 @@
 import { Component, WritableSignal, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   IonButton,
   IonContent,
@@ -18,6 +18,7 @@ type Modo = 'entrar' | 'criar';
 @Component({
   selector: 'app-login',
   imports: [
+    RouterLink,
     IonContent,
     IonSegment,
     IonSegmentButton,

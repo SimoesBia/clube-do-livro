@@ -1,4 +1,7 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Router } from '@angular/router';
+import { AuthService } from '../../core/auth.service';
+import { ChatPrivadoComponent } from '../chat-privado/chat-privado.component';
 import { IonSpinner } from '@ionic/angular';
 import { LivrosLidosService } from '../../core/livros-lidos.service';
 import { NOMES_DOS_NIVEIS, Perfil, nivelDoPerfil } from '../../core/modelos';
@@ -12,7 +15,7 @@ type DadosDoMembro = Pick<Perfil, 'id' | 'nome' | 'avatar_id' | 'participacoes' 
 // nome, nível do aro, troféus e livros lidos.
 @Component({
   selector: 'app-resumo-membro',
-  imports: [IonSpinner, AvatarComponent],
+  imports: [IonSpinner, AvatarComponent, ChatPrivadoComponent],
   template: `
     @if (resumo.aberto()) {
       <div class="sobreposicao">
@@ -41,6 +44,11 @@ type DadosDoMembro = Pick<Perfil, 'id' | 'nome' | 'avatar_id' | 'participacoes' 
                 <span>{{ d.participacoes === 1 ? 'desafio' : 'desafios' }}</span>
               </div>
             </div>
+            <button type="button" class="pilula" (click)="verPerfil(d.id)">Ver perfil completo</button>
+            @if (auth.perfil()?.id !== d.id) {
+              <button type="button" class="pilula ativa" (click)="chat.set(!chat())">Enviar mensagem</button>
+              @if (chat()) { <app-chat-privado [destinatario]="d.id" [nome]="d.nome"></app-chat-privado> }
+            }
           } @else {
             <p class="suave">Não consegui abrir esse perfil agora.</p>
           }
@@ -117,6 +125,9 @@ type DadosDoMembro = Pick<Perfil, 'id' | 'nome' | 'avatar_id' | 'participacoes' 
   ],
 })
 export class ResumoMembroComponent {
+  protected readonly auth = inject(AuthService);
+  protected readonly chat = signal(false);
+  private readonly router = inject(Router);
   protected readonly resumo = inject(ResumoMembroService);
   private readonly sb = inject(SupabaseService).cliente;
   private readonly lidos = inject(LivrosLidosService);
@@ -130,12 +141,25 @@ export class ResumoMembroComponent {
 
   constructor() {
     effect(() => {
+      const logado = this.auth.logado();
+      if (!logado) untracked(() => this.resumo.fechar());
+    });
+    effect(() => {
       const id = this.resumo.aberto();
+      if (!id) ++this.versao;
       if (id) untracked(() => void this.carregar(id));
     });
   }
 
+  private versao = 0;
+  protected async verPerfil(id: string) {
+    this.resumo.fechar();
+    await this.router.navigate(['/membro', id]);
+  }
+
   private async carregar(id: string) {
+    const versao = ++this.versao;
+    this.chat.set(false);
     this.carregando.set(true);
     this.dados.set(null);
     const { data } = await this.sb
@@ -143,8 +167,10 @@ export class ResumoMembroComponent {
       .select('id, nome, avatar_id, participacoes, vitorias')
       .eq('id', id)
       .maybeSingle();
+    const livros = await this.lidos.contar(id);
+    if (versao !== this.versao) return;
     this.dados.set((data as DadosDoMembro | null) ?? null);
-    this.livros.set(await this.lidos.contar(id));
+    this.livros.set(livros);
     this.carregando.set(false);
   }
 }

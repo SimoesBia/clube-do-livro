@@ -73,7 +73,7 @@ import { LivrosLidosService } from '../../core/livros-lidos.service';
 
             @if (modo() === 'clube' && auth.eAdmin() && idDoLivro()) {
               <ion-button expand="block" fill="outline" color="danger" [disabled]="enviando()" (click)="remover()">
-                🗑️ Remover da estante (só administração)
+                🗑️ Arquivar livro (só administração)
               </ion-button>
             }
 

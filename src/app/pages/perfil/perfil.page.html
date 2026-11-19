@@ -9,6 +9,11 @@
 
 <ion-content>
   <div class="conteudo">
+    <ion-segment [value]="aba()" (ionChange)="aba.set($any($event).detail.value)">
+      <ion-segment-button value="avatar"><ion-label>Avatares</ion-label></ion-segment-button>
+      <ion-segment-button value="estante"><ion-label>Minha estante</ion-label></ion-segment-button>
+    </ion-segment>
+    @if (aba() === 'avatar') {
     <section class="secao">
       <app-avatar-seletor [(escolhido)]="avatarId"></app-avatar-seletor>
     </section>
@@ -42,8 +47,10 @@
       <p class="suave dica-email">É com este e-mail que você entra no app. Anote para não esquecer!</p>
     </section>
 
-    <app-livros-lidos></app-livros-lidos>
 
+
+    <label><input type="checkbox" [checked]="receberEmails()"
+      (change)="receberEmails.set($any($event.target).checked)" /> Receber por e-mail convites, resultados da roleta e encontros</label>
     @if (erro()) {
       <p class="erro" role="alert">{{ erro() }}</p>
     }
@@ -56,6 +63,11 @@
       }
     </ion-button>
 
+    } @else {
+      <app-livros-lidos></app-livros-lidos>
+      <app-resenhas-pessoais [perfilId]="auth.perfil()?.id ?? ''"></app-resenhas-pessoais>
+      <app-conversas></app-conversas>
+    }
     <ion-button expand="block" fill="clear" color="medium" (click)="sair()">Sair da conta</ion-button>
   </div>
 </ion-content>

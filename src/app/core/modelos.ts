@@ -2,6 +2,7 @@
 
 // Um membro do clube (uma linha da tabela "perfis" no Supabase)
 export interface Perfil {
+  receber_emails?: boolean;
   id: string;
   nome: string;
   aniversario: string | null; // formato AAAA-MM-DD
@@ -103,6 +104,7 @@ export interface Livro {
 }
 
 export interface DadosDoClube {
+  encontro_em?: string | null;
   data_sorteio: string | null; // AAAA-MM-DD
   link_meet: string | null;
   livro: Livro | null; // livro do mês
@@ -134,6 +136,7 @@ export interface Sorteio {
 
 // Um livro encontrado na busca (ou digitado à mão)
 export interface ResultadoBusca {
+  idioma?: string;
   titulo: string;
   autor: string | null;
   capa_url: string | null;

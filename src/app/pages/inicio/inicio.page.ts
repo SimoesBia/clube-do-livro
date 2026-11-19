@@ -7,15 +7,17 @@ import { ClubeService } from '../../core/clube.service';
 import { AvatarMembroComponent } from '../../shared/avatar/avatar-membro.component';
 import { LivroDoMesComponent } from '../../shared/livro-do-mes/livro-do-mes.component';
 import { RoletaComponent } from '../../shared/roleta/roleta.component';
+import { MembrosComponent } from '../../shared/membros/membros.component';
 import { TopoComponent } from '../../shared/topo/topo.component';
 
 @Component({
   selector: 'app-inicio',
-  imports: [IonContent, IonSpinner, IonButton, TopoComponent, AvatarMembroComponent, LivroDoMesComponent, RoletaComponent],
+  imports: [IonContent, IonSpinner, IonButton, TopoComponent, AvatarMembroComponent, LivroDoMesComponent, RoletaComponent, MembrosComponent],
   templateUrl: './inicio.page.html',
   styleUrl: './inicio.page.scss',
 })
 export class InicioPage {
+  protected readonly aba = signal<'clube' | 'membros'>('clube');
   protected readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly clube = inject(ClubeService);

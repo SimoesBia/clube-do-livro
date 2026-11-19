@@ -1,6 +1,12 @@
 <app-topo titulo="Court of Books" enfeite="📚"></app-topo>
 
 <ion-content [fullscreen]="true">
+  <nav class="abas-inicio" aria-label="Seções do início">
+    <button type="button" [class.ativa]="aba() === 'clube'" [attr.aria-pressed]="aba() === 'clube'" (click)="aba.set('clube')">Nosso clube</button>
+    <button type="button" [class.ativa]="aba() === 'membros'" [attr.aria-pressed]="aba() === 'membros'" (click)="aba.set('membros')">Membros</button>
+  </nav>
+  @if (aba() === 'membros') { <app-membros></app-membros> }
+  <div [hidden]="aba() !== 'clube'">
   <section class="boas-vindas">
     <app-avatar-membro [membro]="auth.perfil()" [tamanho]="84"></app-avatar-membro>
     <div>
@@ -57,4 +63,5 @@
       }
     }
   </section>
+  </div>
 </ion-content>

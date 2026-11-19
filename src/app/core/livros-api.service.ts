@@ -1,4 +1,5 @@
-import { Injectable } from '@angular/core';
+import { SupabaseService } from './supabase.service';
+import { Injectable, inject } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { ResultadoBusca } from './modelos';
 
@@ -23,6 +24,7 @@ interface DocOpenLibrary {
   author_name?: string[];
   cover_i?: number;
   first_publish_year?: number;
+  language?: string[];
   number_of_pages_median?: number;
 }
 
@@ -81,6 +83,7 @@ const CONSULTAS_LANCAMENTOS = ['ficção', 'romance', 'fantasia', 'mistério', '
 export interface CursorBiblioteca {
   google: (number | null)[];
   openLibrary: number | null;
+  clube?: number | null;
 }
 
 export interface PaginaBiblioteca {
@@ -91,6 +94,8 @@ export interface PaginaBiblioteca {
 
 @Injectable({ providedIn: 'root' })
 export class LivrosApiService {
+  private readonly sb = inject(SupabaseService).cliente;
+  private readonly respostas = new Map<string, { expira: number; dados: Promise<unknown> }>();
   private readonly memoria = new Map<string, ResultadoBusca[]>();
 
   async buscar(texto: string): Promise<ResultadoBusca[]> {
@@ -98,7 +103,7 @@ export class LivrosApiService {
     if (q.length < 2) return [];
 
     const [google, aberta] = await Promise.allSettled([
-      this.volumes({ q, max: 10 }).then((v) => v.map((x) => this.deGoogle(x))),
+      this.volumes({ q, max: 20 }).then((v) => v.map((x) => this.deGoogle(x))),
       this.openLibrary(q),
     ]);
     const principais = google.status === 'fulfilled' ? google.value.filter((c) => c.titulo && /^pt(?:-|$)/i.test(c.idioma)) : [];
@@ -121,7 +126,9 @@ export class LivrosApiService {
         mapa.set(k, o);
       }
     }
-    return Array.from(mapa.values()).slice(0, 8);
+    const livros = Array.from(mapa.values());
+    this.ordenarBusca(livros, q);
+    return livros.slice(0, 12);
   }
 
   async paginaBiblioteca(
@@ -134,15 +141,15 @@ export class LivrosApiService {
     const mundo = !busca && categoriaId === CATEGORIA_MUNDO.id;
     const lancamentos = !busca && categoriaId === 'novos';
     const anoMinimo = new Date().getFullYear() - (cat?.anosRecentes ?? 2);
-    const consultas = busca ? [busca] : lancamentos ? CONSULTAS_LANCAMENTOS :
+    const consultas = busca ? [busca, 'inauthor:"' + busca.replace(/["\\]/g, ' ').trim() + '"'] : lancamentos ? CONSULTAS_LANCAMENTOS :
       cat?.consulta ? [cat.consulta] : [];
     const atual = cursor ?? { google: consultas.map(() => 0), openLibrary: 0 };
 
     const assunto = ASSUNTOS_OPEN_LIBRARY[categoriaId];
     const qAberta = busca
-      ? '"' + busca.replace(/["\\]/g, ' ').trim() + '"'
+      ? busca.replace(/[():"\\]/g, ' ').trim()
       : lancamentos ? `first_publish_year:[${anoMinimo} TO *]`
-        : emAlta ? 'trending_score_hourly_sum:[1 TO *]'
+        : emAlta ? 'trending_z_score:[1 TO *]'
           : assunto ? `subject:"${assunto}"` : (cat?.consulta ?? '');
 
     const google = Promise.allSettled(consultas.map(async (q, indice) => {
@@ -150,7 +157,7 @@ export class LivrosApiService {
       if (inicio == null) return { livros: [], proximo: null };
       const volumes = await this.volumes({ q, ordem: busca ? 'relevance' : cat?.ordem, inicio, max: TAMANHO_PAGINA });
       const livros = volumes.map(v => this.deGoogle(v)).filter(c =>
-        c.titulo && /^pt(?:-|$)/i.test(c.idioma) &&
+        c.titulo && (busca || /^pt(?:-|$)/i.test(c.idioma)) &&
         (!lancamentos || (c.ano ?? 0) >= anoMinimo),
       ).map(c => this.limpo(c));
       return { livros, proximo: volumes.length ? inicio + volumes.length : null };
@@ -202,10 +209,26 @@ export class LivrosApiService {
       });
     }
 
+    let livrosClube: ResultadoBusca[] = [];
+    let proximoClube: number | null = null;
+    if (emAlta && atual.clube !== null) {
+      const inicioClube = atual.clube ?? 0;
+      const { data, error } = await this.sb.rpc('livros_populares_clube', {
+        p_inicio: inicioClube, p_limite: TAMANHO_PAGINA,
+      });
+      if (error) {
+        falhas.add('leituras do clube');
+        proximoClube = inicioClube;
+      } else {
+        livrosClube = (data ?? []) as ResultadoBusca[];
+        proximoClube = livrosClube.length === TAMANHO_PAGINA ? inicioClube + TAMANHO_PAGINA : null;
+      }
+    }
+
     return {
-      livros: this.juntarLivros(livrosGoogle, livrosAbertos),
-      proximo: proximoAberto !== null || proximosGoogle.some(inicio => inicio !== null)
-        ? { google: proximosGoogle, openLibrary: proximoAberto } : null,
+      livros: this.juntarLivros(livrosClube, this.juntarLivros(livrosGoogle, livrosAbertos)),
+      proximo: proximoClube !== null || proximoAberto !== null || proximosGoogle.some(inicio => inicio !== null)
+        ? { google: proximosGoogle, openLibrary: proximoAberto, clube: proximoClube } : null,
       falhas: [...falhas],
     };
   }
@@ -229,6 +252,23 @@ export class LivrosApiService {
       proximo: docs.length && (total != null ? proximo < total : docs.length === TAMANHO_PAGINA)
         ? proximo : null,
     };
+  }
+
+  ordenarBusca(livros: ResultadoBusca[], texto: string) {
+    const consulta = this.chave(texto);
+    const termos = consulta.split(' ').filter(Boolean);
+    const pontuar = (livro: ResultadoBusca) => {
+      const titulo = this.chave(livro.titulo);
+      const autor = this.chave(livro.autor ?? '');
+      if (titulo === consulta) return 100;
+      if (autor === consulta) return 90;
+      if (titulo.startsWith(consulta)) return 80;
+      if (autor.includes(consulta)) return 70;
+      if (titulo.includes(consulta)) return 60;
+      return termos.filter(termo => titulo.includes(termo) || autor.includes(termo)).length * 5;
+    };
+    livros.sort((a, b) => pontuar(b) - pontuar(a) ||
+      Number(/^pt(?:-|$)/i.test(b.idioma ?? '')) - Number(/^pt(?:-|$)/i.test(a.idioma ?? '')));
   }
 
   juntarLivros(atuais: ResultadoBusca[], novos: ResultadoBusca[]): ResultadoBusca[] {
@@ -387,7 +427,7 @@ export class LivrosApiService {
   // Procura só livros que têm edição em português
   private async openLibrary(q: string): Promise<ResultadoBusca[]> {
     const url =
-      `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent(q + ' language:por')}` +
+      `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent(q)}` +
       `&limit=8&fields=key,title,author_name,cover_i,first_publish_year,number_of_pages_median`;
     const json = (await this.pegar(url)) as { docs?: DocOpenLibrary[] };
     return (json.docs ?? []).map((d) => this.deOpenLibrary(d)).filter((r) => r.titulo);
@@ -407,9 +447,24 @@ export class LivrosApiService {
 
  
 
-  private async pegar(url: string): Promise<unknown> {
+  private pegar(url: string): Promise<unknown> {
+    const anterior = this.respostas.get(url);
+    if (anterior && anterior.expira > Date.now()) return anterior.dados;
+    const dados = this.requisitar(url).catch(erro => {
+      this.respostas.delete(url);
+      throw erro;
+    });
+    if (this.respostas.size > 200) {
+      const primeira = this.respostas.keys().next().value;
+      if (primeira) this.respostas.delete(primeira);
+    }
+    this.respostas.set(url, { expira: Date.now() + 5 * 60 * 1000, dados });
+    return dados;
+  }
+
+  private async requisitar(url: string): Promise<unknown> {
     const controle = new AbortController();
-    const relogio = setTimeout(() => controle.abort(), 9000);
+    const relogio = setTimeout(() => controle.abort(), 15000);
     try {
       const resposta = await fetch(url, { signal: controle.signal });
       if (!resposta.ok) throw new Error(`Serviço respondeu com o código ${resposta.status}`);
@@ -455,7 +510,7 @@ export class LivrosApiService {
   }
 
   private limpo(c: Candidato): ResultadoBusca {
-    return { titulo: c.titulo, autor: c.autor, capa_url: c.capa_url, ano: c.ano, paginas: c.paginas, descricao: c.descricao, chave_ol: c.chave_ol };
+    return { titulo: c.titulo, autor: c.autor, capa_url: c.capa_url, ano: c.ano, paginas: c.paginas, descricao: c.descricao, chave_ol: c.chave_ol, idioma: c.idioma };
   }
 
   private semRepetidos(lista: ResultadoBusca[]): ResultadoBusca[] {

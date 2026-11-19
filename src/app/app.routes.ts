@@ -27,5 +27,17 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'inicio' },
     ],
   },
+  {
+    path: 'membro/:id', canActivate: [guardaLogado],
+    loadComponent: () => import('./pages/perfil-membro/perfil-membro.page').then(m => m.PerfilMembroPage),
+  },
+  {
+    path: 'recuperar-senha',
+    loadComponent: () => import('./pages/recuperar-senha/recuperar-senha.page').then(m => m.RecuperarSenhaPage),
+  },
+  {
+    path: 'redefinir-senha',
+    loadComponent: () => import('./pages/recuperar-senha/recuperar-senha.page').then(m => m.RecuperarSenhaPage),
+  },
   { path: '**', redirectTo: '' },
 ];

@@ -104,7 +104,7 @@ export class AuthService {
     this.perfil.set(null);
   }
 
-  async atualizarPerfil(campos: Partial<Pick<Perfil, 'nome' | 'aniversario' | 'avatar_id'>>): Promise<Resultado> {
+  async atualizarPerfil(campos: Partial<Pick<Perfil, 'nome' | 'aniversario' | 'avatar_id' | 'receber_emails'>>): Promise<Resultado> {
     const id = this.sessao()?.user.id;
     if (!id) return { erro: 'Você precisa entrar de novo para salvar.' };
 

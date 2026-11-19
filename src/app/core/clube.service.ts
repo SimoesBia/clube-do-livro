@@ -24,7 +24,7 @@ export class ClubeService {
   async carregarClube() {
     const { data } = await this.sb
       .from('clube')
-      .select('data_sorteio, link_meet, livro:livros!livro_do_mes_id(id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em)')
+      .select('data_sorteio, link_meet, encontro_em, livro:livros!livro_do_mes_id(id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em)')
       .eq('id', 1)
       .maybeSingle();
     if (data) {
@@ -32,6 +32,7 @@ export class ClubeService {
       this.dados.set({
         data_sorteio: data.data_sorteio ?? null,
         link_meet: data.link_meet ?? null,
+        encontro_em: data.encontro_em ?? null,
         livro: (livro as unknown as DadosDoClube['livro']) ?? null,
       });
     }
@@ -69,6 +70,14 @@ export class ClubeService {
     return '';
   }
 
+  async definirEncontro(link: string, encontro: string | null): Promise<string> {
+    const { error } = await this.sb.from('clube')
+      .update({ link_meet: link || null, encontro_em: encontro }).eq('id', 1);
+    if (error) return 'Não consegui salvar o encontro.';
+    await this.carregarClube();
+    return '';
+  }
+
   async definirDataSorteio(data: string | null): Promise<string> {
     const { error } = await this.sb.from('clube').update({ data_sorteio: data }).eq('id', 1);
     if (error) return 'Não deu para salvar a data agora.';
@@ -86,7 +95,7 @@ export class ClubeService {
 
   
   async removerLivro(id: string): Promise<string> {
-    const { error } = await this.sb.from('livros').delete().eq('id', id);
+    const { error } = await this.sb.rpc('arquivar_livro_clube', { p_id: id });
     if (error) return 'Não deu para remover o livro agora.';
     await this.carregarClube();
     return '';

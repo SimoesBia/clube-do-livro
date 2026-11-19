@@ -1,6 +1,7 @@
 import { Component, WritableSignal, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
+  IonSegment, IonSegmentButton, IonLabel,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -14,11 +15,14 @@ import {
 } from '@ionic/angular';
 import { AuthService } from '../../core/auth.service';
 import { AvatarSeletorComponent } from '../../shared/avatar/avatar-seletor.component';
+import { ResenhasPessoaisComponent } from '../../shared/resenhas-pessoais/resenhas-pessoais.component';
+import { ConversasComponent } from '../../shared/conversas/conversas.component';
 import { LivrosLidosComponent } from '../../shared/livros-lidos/livros-lidos.component';
 
 @Component({
   selector: 'app-perfil',
   imports: [
+    IonSegment, IonSegmentButton, IonLabel,
     IonHeader,
     IonToolbar,
     IonTitle,
@@ -29,13 +33,14 @@ import { LivrosLidosComponent } from '../../shared/livros-lidos/livros-lidos.com
     IonButton,
     IonSpinner,
     AvatarSeletorComponent,
-    LivrosLidosComponent,
+    LivrosLidosComponent, ResenhasPessoaisComponent, ConversasComponent,
   ],
   templateUrl: './perfil.page.html',
   styleUrl: './perfil.page.scss',
 })
 export class PerfilPage {
-  private readonly auth = inject(AuthService);
+  protected readonly aba = signal('estante');
+  protected readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastController);
 
@@ -43,6 +48,7 @@ export class PerfilPage {
   protected readonly nome = signal('');
   protected readonly aniversario = signal('');
   protected readonly avatarId = signal<string | null>(null);
+  protected readonly receberEmails = signal(true);
   protected readonly salvando = signal(false);
   protected readonly erro = signal('');
 
@@ -52,6 +58,7 @@ export class PerfilPage {
   ionViewWillEnter() {
     const p = this.auth.perfil();
     if (!p) return;
+    this.receberEmails.set(p.receber_emails ?? true);
     this.nome.set(p.nome);
     this.aniversario.set(p.aniversario ?? '');
     this.avatarId.set(p.avatar_id);
@@ -74,6 +81,7 @@ export class PerfilPage {
     }
     this.salvando.set(true);
     const resultado = await this.auth.atualizarPerfil({
+      receber_emails: this.receberEmails(),
       nome: this.nome().trim(),
       aniversario: this.aniversario() || null,
       avatar_id: this.avatarId(),

@@ -75,3 +75,8 @@ h2 {
   justify-content: center;
   padding: 14px;
 }
+
+.abas-inicio { display: flex; gap: 4px; margin: 16px; padding: 4px; border-radius: 18px; background: #f2e2e5; }
+.abas-inicio button { flex: 1; padding: 13px 8px; border: 0; border-radius: 14px; background: transparent; color: var(--cob-vinho); font: inherit; cursor: pointer; }
+.abas-inicio button.ativa { background: #fff4f5; font-weight: 700; box-shadow: 0 2px 8px var(--cob-sombra); }
+.abas-inicio button:focus-visible { outline: 2px solid var(--cob-vinho); outline-offset: 2px; }

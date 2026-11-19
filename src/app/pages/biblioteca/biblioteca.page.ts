@@ -90,6 +90,9 @@ type Aba = 'estante' | 'descobrir';
           }
           <button type="button" class="pilula" [class.ativa]="!busca() && categoria() === mundo.id" (click)="escolherCategoria(mundo.id)">{{ mundo.nome }}</button>
         </div>
+        @if (!busca() && categoria() === 'alta') {
+          <p class="mensagem suave">Interesses recentes do clube e tendências da Open Library.</p>
+        }
         <div class="surpresa">
           <button type="button" class="pilula ativa" (click)="surpreender()">🎲 Surpreenda-me</button>
           @if (rotuloSurpresa()) {
@@ -367,6 +370,7 @@ export class BibliotecaPage {
     const { data } = await this.sb
       .from('livros')
       .select('id, titulo, autor, capa_url, ano, paginas, descricao, chave_ol, criado_em')
+      .eq('arquivado', false)
       .order('criado_em', { ascending: false });
     this.livros.set((data ?? []) as Livro[]);
     this.carregandoEstante.set(false);
@@ -422,7 +426,9 @@ export class BibliotecaPage {
       const livros = this.api.juntarLivros(anterior, pagina.livros);
       if (!busca && categoria === 'novos') {
         livros.sort((a, b) => (b.ano ?? 0) - (a.ano ?? 0) || this.ordemTitulo.compare(a.titulo, b.titulo));
-      } else if (busca || (categoria !== 'alta' && categoria !== this.mundo.id)) {
+      } else if (busca) {
+        this.api.ordenarBusca(livros, busca);
+      } else if (categoria !== 'alta' && categoria !== this.mundo.id) {
         livros.sort((a, b) => this.ordemTitulo.compare(a.titulo, b.titulo));
       }
       this.lista.set(livros);

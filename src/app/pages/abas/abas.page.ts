@@ -4,7 +4,6 @@ import { AuthService } from '../../core/auth.service';
 import { DesafiosService } from '../../core/desafios.service';
 import { NotificacoesService } from '../../core/notificacoes.service';
 import { NotificacoesPainelComponent } from '../../shared/notificacoes/notificacoes-painel.component';
-import { ResumoMembroComponent } from '../../shared/resumo-membro/resumo-membro.component';
 import {
   calendarOutline,
   chatbubbleEllipsesOutline,
@@ -16,7 +15,7 @@ import {
 // A "moldura" do app depois do login: as abas de baixo
 @Component({
   selector: 'app-abas',
-  imports: [IonTabs, IonTabBar, IonTabButton, IonIcon, IonLabel, IonBadge, ResumoMembroComponent, NotificacoesPainelComponent],
+  imports: [IonTabs, IonTabBar, IonTabButton, IonIcon, IonLabel, IonBadge, NotificacoesPainelComponent],
   templateUrl: './abas.page.html',
 })
 export class AbasPage implements OnInit, OnDestroy {
